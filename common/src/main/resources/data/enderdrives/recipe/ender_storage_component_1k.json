@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " E ",
+    "E1E",
+    " E "
+  ],
+  "key": {
+    "1": {
+      "item": "ae2:cell_component_1k"
+    },
+    "E": {
+      "item": "minecraft:ender_eye"
+    }
+  },
+  "result": {
+    "id": "enderdrives:ender_storage_component_1k",
+    "count": 1
+  }
+}

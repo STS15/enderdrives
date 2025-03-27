@@ -1,0 +1,5 @@
+{
+  "codec": "minecraft:compound_tag",
+  "stream_codec": "minecraft:compound_tag",
+  "persistent": true
+}

@@ -1,0 +1,29 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "GDG",
+    "DCD",
+    "EOE"
+  ],
+  "key": {
+    "C": {
+      "item": "enderdrives:ender_storage_component_1k"
+    },
+    "O": {
+      "tag": "c:obsidians"
+    },
+    "E": {
+      "tag": "c:chests/ender"
+    },
+    "G": {
+      "item": "ae2:quartz_vibrant_glass"
+    },
+    "D": {
+      "item": "ae2:singularity"
+    }
+  },
+  "result": {
+    "id": "enderdrives:ender_disk_1k",
+    "count": 1
+  }
+}

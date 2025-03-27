@@ -1,0 +1,170 @@
+plugins {
+    id 'multiloader-loader'
+    id 'net.neoforged.moddev'
+}
+
+def extraModsDir = "extra-mods"
+def extraAPIDir = "extra-api"
+
+repositories {
+    mavenLocal()
+
+    flatDir {
+        name "extra-mods"
+        dir file(extraModsDir)
+    }
+
+    flatDir {
+        name "extra-api"
+        dir file(extraAPIDir)
+    }
+
+    maven {
+        name = "Blamejared maven"
+        url = "https://maven.blamejared.com/"
+        content {
+            includeGroup "vazkii.patchouli"
+            includeGroup "mezz.jei"
+        }
+    }
+    maven {
+        name = "ModMaven"
+        url = "https://modmaven.k-4u.nl"
+    }
+    maven {
+        name = "OctoStudios"
+        url = uri("https://maven.octo-studios.com/releases")
+    }
+    exclusiveContent {
+        forRepository {
+            maven {
+                url "https://cursemaven.com"
+            }
+        }
+        filter {
+            includeGroup "curse.maven"
+        }
+    }
+    maven {
+        name = "C4's Maven"
+        url = 'https://maven.theillusivec4.top/'
+    }
+    maven {
+        name = "Modrinth"
+        url = "https://api.modrinth.com/maven"
+    }
+    maven {
+        url = "https://maven.saps.dev/minecraft"
+        content {
+            includeGroup "dev.latvian.mods"
+        }
+    }
+    maven {
+        url "https://maven.saps.dev/releases"
+        content {
+            includeGroup "dev.latvian.mods"
+            includeGroup "dev.ftb.mods"
+        }
+    }
+    maven {
+        url "https://maven.saps.dev/snapshots"
+        content {
+            includeGroup "dev.latvian.mods"
+            includeGroup "dev.ftb.mods"
+        }
+    }
+    maven {
+        url "https://maven.architectury.dev/"
+    }
+    mavenCentral()
+}
+
+dependencies {
+
+    implementation "com.sts15.eventslib:eventslib:${eventslib_version}"
+    implementation "mcjty.theoneprobe:theoneprobe:${top_version}"
+
+    implementation "org.appliedenergistics:appliedenergistics2:19.2.2-beta"
+    implementation "org.appliedenergistics:guideme:2.5.1"
+
+    compileOnly "dev.latvian.mods:kubejs-neoforge:2101.7.0-build.171"
+
+    implementation "dev.architectury:architectury-neoforge:${architectury_api_version}"
+    implementation "dev.ftb.mods:ftb-library-neoforge:${ftb_library_version}"
+    implementation "dev.ftb.mods:ftb-teams-neoforge:${ftb_teams_version}"
+
+    compileOnly("mezz.jei:jei-${minecraft_version}-common-api:${jei_version}")
+    compileOnly("mezz.jei:jei-${minecraft_version}-neoforge-api:${jei_version}")
+    runtimeOnly("mezz.jei:jei-${minecraft_version}-neoforge:${jei_version}")
+
+    for (extraModJar in fileTree(dir: extraModsDir, include: '*.jar')) {
+        def basename = extraModJar.name.substring(0, extraModJar.name.length() - ".jar".length())
+        def versionSep = basename.lastIndexOf('-')
+        assert versionSep != -1
+        def artifactId = basename.substring(0, versionSep)
+        def version = basename.substring(versionSep + 1)
+        runtimeOnly "extra-mods:$artifactId:$version"
+    }
+    for (extraModJar in fileTree(dir: extraAPIDir, include: '*.jar')) {
+        def basename = extraModJar.name.substring(0, extraModJar.name.length() - ".jar".length())
+        def versionSep = basename.lastIndexOf('-')
+        assert versionSep != -1
+        def artifactId = basename.substring(0, versionSep)
+        def version = basename.substring(versionSep + 1)
+        implementation "extra-api:$artifactId:$version"
+    }
+
+}
+
+tasks.withType(JavaExec).configureEach {
+    classpath += configurations.runtimeClasspath
+}
+
+neoForge {
+    version = neoforge_version
+    // Automatically enable neoforge AccessTransformers if the file exists
+    def at = project(':common').file('src/main/resources/META-INF/accesstransformer.cfg')
+    if (at.exists()) {
+        accessTransformers.from(at.absolutePath)
+    }
+    parchment {
+        minecraftVersion = parchment_minecraft
+        mappingsVersion = parchment_version
+    }
+    runs {
+        configureEach {
+            systemProperty('neoforge.enabledGameTestNamespaces', mod_id)
+            ideName = "NeoForge ${it.name.capitalize()} (${project.path})" // Unify the run config names with fabric
+        }
+        client {
+            client()
+            ideName = "Client"
+            gameDirectory = project.layout.projectDirectory.dir('runs/client')
+        }
+        client_alt {
+            client()
+            ideName = "Client 2"
+            gameDirectory = project.layout.projectDirectory.dir('runs/client_alt')
+            programArguments = ["--username", "DevAlt"]
+        }
+        server {
+            server()
+            ideName = "Server"
+            gameDirectory = project.layout.projectDirectory.dir('runs/server')
+            programArguments = ["--nogui"]
+        }
+        data {
+            data()
+            ideName = "Data Generation"
+            gameDirectory = project.layout.projectDirectory.dir('runs/data')
+            programArguments.addAll '--mod', project.mod_id, '--all', '--output', file('src/generated/resources/').getAbsolutePath(), '--existing', file('src/main/resources/').getAbsolutePath()
+        }
+    }
+    mods {
+        "${mod_id}" {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }

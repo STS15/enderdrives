@@ -1,0 +1,27 @@
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "enderdrives:item/ender_disk_4k",
+    "layer1": "enderdrives:item/ender_disk_led_green"
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "status": 1
+      },
+      "model": "enderdrives:item/ender_disk_4k_blue"
+    },
+    {
+      "predicate": {
+        "status": 2
+      },
+      "model": "enderdrives:item/ender_disk_4k_yellow"
+    },
+    {
+      "predicate": {
+        "status": 3
+      },
+      "model": "enderdrives:item/ender_disk_4k_red"
+    }
+  ]
+}
