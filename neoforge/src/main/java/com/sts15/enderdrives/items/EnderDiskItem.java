@@ -46,6 +46,7 @@ public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem
     private static final String OWNER_KEY = "ender_owner";
     private static final String TEAM_KEY = "ender_team";
     private static final String TEAM_NAME_KEY = "ender_team_name";
+    private static final String TRANSFER_MODE_KEY = "ender_transfer_mode";
     private final int typeLimit;
 
     public EnderDiskItem(Properties props, int typeLimit) {
@@ -86,6 +87,13 @@ public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem
         }
         lines.add(Component.literal(color + typeCount + "§7 of §9" + typeLimit + "§7 Types"));
         lines.add(Component.literal("§7Frequency: §e" + freq));
+        int mode = getTransferMode(stack);
+        String modeText = switch (mode) {
+            case 1 -> "§7Mode: §9Input Only";
+            case 2 -> "§7Mode: §cOutput Only";
+            default -> "§7Mode: §aBidirectional";
+        };
+        lines.add(Component.literal(modeText));
         String scopeName = switch (scope) {
             case 1 -> {
                 UUID owner = getOwnerUUID(stack);
@@ -254,7 +262,8 @@ public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem
         if (level.isClientSide) {
             int freq = getFrequency(itemStack);
             int scope = getScope(itemStack);
-            EnderDiskFrequencyScreen.open(freq, scope);
+            int transferMode = getTransferMode(itemStack);
+            EnderDiskFrequencyScreen.open(freq, scope, transferMode);
         } else if (player instanceof ServerPlayer serverPlayer) {
             resolveAndCacheTeamInfo(itemStack, serverPlayer);
         }
@@ -279,4 +288,21 @@ public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem
     public @Nullable ItemMenuHost<?> getMenuHost(Player player, ItemMenuHostLocator locator, @Nullable BlockHitResult hitResult) {
         return null;
     }
+
+    public static int getTransferMode(ItemStack stack) {
+        CustomData data = stack.get(DataComponents.CUSTOM_DATA);
+        if (data == null) return 0; // Default to bidirectional
+        CompoundTag tag = data.copyTag();
+        return tag.getInt(TRANSFER_MODE_KEY); // defaults to 0 if missing
+    }
+
+    public static void setTransferMode(ItemStack stack, int mode) {
+        stack.update(DataComponents.CUSTOM_DATA, CustomData.EMPTY, oldData -> {
+            CompoundTag tag = oldData.copyTag();
+            tag.putInt(TRANSFER_MODE_KEY, mode);
+            return CustomData.of(tag);
+        });
+    }
+
+
 }

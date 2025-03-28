@@ -42,8 +42,7 @@ public class EnderDiskInventory implements StorageCell {
 
     @Override
     public CellState getStatus() {
-        String bracketedPrefix = scopePrefix + "[" + frequency + "]";
-        int typesUsed = EnderDBManager.getTypeCount(bracketedPrefix);
+        int typesUsed = EnderDBManager.getTypeCount(scopePrefix,frequency);
         return calculateCellState(typesUsed, typeLimit);
     }
 
@@ -60,21 +59,22 @@ public class EnderDiskInventory implements StorageCell {
     public static CellState getCellStateForStack(ItemStack stack) {
         if (!(stack.getItem() instanceof EnderDiskItem enderDiskItem)) return CellState.ABSENT;
         int freq = EnderDiskItem.getFrequency(stack);
-        String bracketedPrefix = EnderDiskItem.getSafeScopePrefix(stack) + "[" + freq + "]";
-        int typesUsed = EnderDBManager.getTypeCount(bracketedPrefix);
+        int typesUsed = EnderDBManager.getTypeCount(EnderDiskItem.getSafeScopePrefix(stack), freq);
         int typeLimit = enderDiskItem.getTypeLimit();
         return calculateCellState(typesUsed, typeLimit);
     }
 
     @Override
     public long insert(AEKey what, long amount, Actionable mode, IActionSource source) {
+        int transferMode = EnderDiskItem.getTransferMode(stack);
+        if (transferMode == 2) return 0;
         if (!(what instanceof AEItemKey itemKey)) return 0;
         ItemStack toInsert = itemKey.toStack();
         byte[] serialized = serializeItemStackToBytes(toInsert);
         if (serialized.length == 0) return 0;
         long existing = EnderDBManager.getItemCount(scopePrefix, frequency, serialized);
         boolean isNewType = existing == 0;
-        if (isNewType && EnderDBManager.getTypeCount(scopePrefix + "[" + frequency + "]") >= typeLimit) return 0;
+        if (isNewType && EnderDBManager.getTypeCount(scopePrefix, frequency) >= typeLimit) return 0;
         if (mode == Actionable.MODULATE) EnderDBManager.saveItem(scopePrefix, frequency, serialized, amount);
         log("Insert called: freq=%d scopePrefix=%s amount=%d newType=%s mode=%s", frequency, scopePrefix, amount, isNewType, mode);
         return amount;
@@ -82,6 +82,8 @@ public class EnderDiskInventory implements StorageCell {
 
     @Override
     public long extract(AEKey what, long amount, Actionable mode, IActionSource source) {
+        int transferMode = EnderDiskItem.getTransferMode(stack);
+        if (transferMode == 1) return 0;
         if (!(what instanceof AEItemKey itemKey)) return 0;
         ItemStack toExtract = itemKey.toStack();
         byte[] serialized = serializeItemStackToBytes(toExtract);
@@ -103,11 +105,9 @@ public class EnderDiskInventory implements StorageCell {
         return Component.literal("EnderDisk @ Freq " + frequency);
     }
 
-    @Override
     public void getAvailableStacks(KeyCounter out) {
-        List<AEKeyCacheEntry> cached = EnderDBManager.queryItemsByFrequencyCached(scopePrefix, frequency);
-        log("QueryItemsByFreqCached: prefix=%s_%d entriesFound=%d", scopePrefix, frequency, cached.size());
-        for (AEKeyCacheEntry entry : cached) {
+        List<AEKeyCacheEntry> entries = EnderDBManager.queryItemsByFrequency(scopePrefix, frequency);
+        for (AEKeyCacheEntry entry : entries) {
             out.add(entry.aeKey(), entry.count());
         }
     }

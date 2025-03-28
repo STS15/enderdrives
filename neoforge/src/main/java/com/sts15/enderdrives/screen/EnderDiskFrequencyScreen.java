@@ -20,6 +20,7 @@ import net.neoforged.fml.ModList;
 import org.joml.Matrix4f;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import static com.sts15.enderdrives.Constants.MOD_ID;
 
@@ -52,13 +53,17 @@ public class EnderDiskFrequencyScreen extends Screen {
     private final List<Particle2D> uiParticles = new ArrayList<>();
     private float particleSpawnTimer = 0f;
     private final Random random = new Random();
+    private int transferMode = TransferMode.BIDIRECTIONAL;
+    private CustomImageCycleButton transferButton;
 
-    public EnderDiskFrequencyScreen(int currentFrequency, int scopeId) {
+    public EnderDiskFrequencyScreen(int currentFrequency, int scopeId, int transferMode) {
         super(Component.literal("EnderDisk Frequency"));
         this.frequency = currentFrequency;
         this.currentScope = FrequencyScope.fromId(scopeId);
+        this.transferMode = transferMode;
         decodeFrequency();
     }
+
 
     @Override
     protected void init() {
@@ -81,6 +86,19 @@ public class EnderDiskFrequencyScreen extends Screen {
         frequencyField.setTextColor(0xFFFFFF);
         frequencyField.setCanLoseFocus(true);
         this.addRenderableWidget(frequencyField);
+
+        transferButton = new CustomImageCycleButton(
+                leftPos + 100, topPos + 85,
+                15, 14,
+                b -> {
+                    transferMode = TransferMode.next(transferMode);
+                    transferButton.setMode(transferMode);
+                },
+                transferMode
+        );
+
+        this.addRenderableWidget(transferButton);
+
         Button customButton = new CustomImageButton(
                 leftPos + 118, topPos + 85,
                 50, 14,
@@ -339,7 +357,7 @@ public class EnderDiskFrequencyScreen extends Screen {
     @Override
     public void onClose() {
         super.onClose();
-        NetworkHandler.sendFrequencyUpdateToServer(frequency, currentScope.id);
+        NetworkHandler.sendFrequencyUpdateToServer(frequency, currentScope.id, transferMode);
         if (currentScope == FrequencyScope.TEAM) {
             Player player = Minecraft.getInstance().player;
             if (player != null) {
@@ -356,10 +374,12 @@ public class EnderDiskFrequencyScreen extends Screen {
         return false;
     }
 
-    public static void open(int currentFreq, int scopeId) {
-        Minecraft.getInstance().setScreen(new EnderDiskFrequencyScreen(currentFreq, scopeId));
+    public static void open(int currentFreq, int scopeId, int transferMode) {
+        Minecraft.getInstance().setScreen(new EnderDiskFrequencyScreen(currentFreq, scopeId, transferMode));
     }
+
 }
+
 class CustomImageButton extends Button {
     private final ResourceLocation normalTexture;
     private final ResourceLocation hoverTexture;
@@ -421,5 +441,43 @@ class Particle2D {
         float flicker = 0.5f + 0.5f * (float)Math.sin(age * 12f + flickerOffset);
         int alpha = (int)(255 * (1f - age / lifetime) * flicker);
         return FastColor.ARGB32.color(alpha, 120 + (int)(flicker * 80), 0, 180 + (int)(flicker * 75));
+    }
+}
+class CustomImageCycleButton extends Button {
+    private int currentMode;
+
+    public CustomImageCycleButton(int x, int y, int width, int height, OnPress onPress, int initial) {
+        super(x, y, width, height, Component.empty(), onPress, DEFAULT_NARRATION);
+        this.currentMode = initial;
+    }
+
+    public void setMode(int mode) {
+        this.currentMode = mode;
+    }
+
+    @Override
+    public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        ResourceLocation texture = getTexture(currentMode, isHovered);
+        graphics.blit(texture, getX(), getY(), 0, 0, width, height, width, height);
+        if (isHovered) {
+            graphics.renderTooltip(Minecraft.getInstance().font,
+                    Component.translatable(TransferMode.getTranslationKey(currentMode)), mouseX, mouseY);
+        }
+    }
+
+    private ResourceLocation getTexture(int mode, boolean hover) {
+        return switch (mode) {
+            case TransferMode.INPUT_ONLY -> hover ?
+                    ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/transport_input_hover.png") :
+                    ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/transport_input.png");
+
+            case TransferMode.OUTPUT_ONLY -> hover ?
+                    ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/transport_output_hover.png") :
+                    ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/transport_output.png");
+
+            default -> hover ?
+                    ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/transport_bidirectional_hover.png") :
+                    ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/transport_bidirectional.png");
+        };
     }
 }

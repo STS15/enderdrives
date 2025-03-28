@@ -40,7 +40,7 @@ public class RequestDiskTypeCountPacket implements CustomPacketPayload {
     public static void handle(RequestDiskTypeCountPacket packet, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player) {
-                int count = EnderDBManager.getTypeCount(packet.scopePrefix + "[" + packet.frequency + "]");
+                int count = EnderDBManager.getTypeCount(packet.scopePrefix,packet.frequency);
                 int limit = packet.typeLimit();
                 NetworkHandler.sendToClient(player, new UpdateDiskTypeCountPacket(packet.scopePrefix, packet.frequency, count, limit));
             }

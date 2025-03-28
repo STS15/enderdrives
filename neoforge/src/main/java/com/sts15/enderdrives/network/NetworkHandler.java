@@ -20,8 +20,8 @@ public class NetworkHandler {
         registrar.playToServer(RequestDiskTypeCountPacket.TYPE, RequestDiskTypeCountPacket.STREAM_CODEC, RequestDiskTypeCountPacket::handle);
     }
 
-    public static void sendFrequencyUpdateToServer(int frequency, int scope) {
-        PacketDistributor.sendToServer(new UpdateFrequencyPacket(frequency, scope));
+    public static void sendFrequencyUpdateToServer(int frequency, int scope, int transferMode) {
+        PacketDistributor.sendToServer(new UpdateFrequencyPacket(frequency, scope, transferMode));
     }
 
     public static void requestDiskTypeCount(String scopePrefix, int frequency, int typeLimit) {
