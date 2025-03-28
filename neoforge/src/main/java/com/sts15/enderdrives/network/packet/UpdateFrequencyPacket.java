@@ -1,6 +1,7 @@
 package com.sts15.enderdrives.network.packet;
 
 import com.sts15.enderdrives.items.EnderDiskItem;
+import com.sts15.enderdrives.screen.TransferMode;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -15,10 +16,12 @@ import static com.sts15.enderdrives.Constants.MOD_ID;
 public class UpdateFrequencyPacket implements CustomPacketPayload {
     private final int frequency;
     private final int scope;
+    private final int transferMode;
 
-    public UpdateFrequencyPacket(int frequency, int scope) {
+    public UpdateFrequencyPacket(int frequency, int scope, int transferMode) {
         this.frequency = frequency;
         this.scope = scope;
+        this.transferMode = transferMode;
     }
 
     public static final Type<UpdateFrequencyPacket> TYPE =
@@ -32,11 +35,13 @@ public class UpdateFrequencyPacket implements CustomPacketPayload {
     public static final StreamCodec<FriendlyByteBuf, UpdateFrequencyPacket> STREAM_CODEC = StreamCodec.composite(
             ByteBufCodecs.VAR_INT, UpdateFrequencyPacket::getFrequency,
             ByteBufCodecs.VAR_INT, UpdateFrequencyPacket::getScope,
+            ByteBufCodecs.VAR_INT, UpdateFrequencyPacket::getTransferMode,
             UpdateFrequencyPacket::new
     );
 
     private int getFrequency() { return frequency; }
     private int getScope() { return scope; }
+    private int getTransferMode() { return transferMode; }
 
     public static void handle(UpdateFrequencyPacket packet, IPayloadContext context) {
         context.enqueueWork(() -> {
@@ -45,12 +50,14 @@ public class UpdateFrequencyPacket implements CustomPacketPayload {
                 if (heldItem.getItem() instanceof EnderDiskItem) {
                     EnderDiskItem.setFrequency(heldItem, packet.frequency);
                     EnderDiskItem.setScope(heldItem, packet.scope);
+                    EnderDiskItem.setTransferMode(heldItem, packet.transferMode); // <- new
                     if (packet.scope == 1) {
                         EnderDiskItem.setOwnerUUID(heldItem, player.getUUID());
                     }
-
                 }
             }
         });
     }
+
+
 }

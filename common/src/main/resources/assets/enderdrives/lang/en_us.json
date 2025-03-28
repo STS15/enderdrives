@@ -10,5 +10,8 @@
   "item.enderdrives.ender_disk_16k": "16k Ender Item Storage Cell",
   "item.enderdrives.ender_disk_64k": "64k Ender Item Storage Cell",
   "item.enderdrives.ender_disk_256k": "256k Ender Item Storage Cell",
-  "item.enderdrives.ender_disk_creative": "Creative Ender Item Storage Cell"
+  "item.enderdrives.ender_disk_creative": "Creative Ender Item Storage Cell",
+  "enderdrives.transfer_mode.bidirectional": "Bidirectional",
+  "enderdrives.transfer_mode.input": "Input Only",
+  "enderdrives.transfer_mode.output": "Output Only"
 }

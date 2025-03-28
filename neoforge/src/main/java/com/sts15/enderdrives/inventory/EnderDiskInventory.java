@@ -66,6 +66,8 @@ public class EnderDiskInventory implements StorageCell {
 
     @Override
     public long insert(AEKey what, long amount, Actionable mode, IActionSource source) {
+        int transferMode = EnderDiskItem.getTransferMode(stack);
+        if (transferMode == 2) return 0;
         if (!(what instanceof AEItemKey itemKey)) return 0;
         ItemStack toInsert = itemKey.toStack();
         byte[] serialized = serializeItemStackToBytes(toInsert);
@@ -80,6 +82,8 @@ public class EnderDiskInventory implements StorageCell {
 
     @Override
     public long extract(AEKey what, long amount, Actionable mode, IActionSource source) {
+        int transferMode = EnderDiskItem.getTransferMode(stack);
+        if (transferMode == 1) return 0;
         if (!(what instanceof AEItemKey itemKey)) return 0;
         ItemStack toExtract = itemKey.toStack();
         byte[] serialized = serializeItemStackToBytes(toExtract);
