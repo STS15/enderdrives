@@ -1,0 +1,17 @@
+{
+  "key.categories.enderdrives": "EnderDrives",
+  "item.enderdrives.ender_storage_component_1k": "1K エンダーストレージコンポーネント",
+  "item.enderdrives.ender_storage_component_4k": "4K エンダーストレージコンポーネント",
+  "item.enderdrives.ender_storage_component_16k": "16K エンダーストレージコンポーネント",
+  "item.enderdrives.ender_storage_component_64k": "64K エンダーストレージコンポーネント",
+  "item.enderdrives.ender_storage_component_256k": "256K エンダーストレージコンポーネント",
+  "item.enderdrives.ender_disk_1k": "1k エンダーアイテムストレージセル",
+  "item.enderdrives.ender_disk_4k": "4k エンダーアイテムストレージセル",
+  "item.enderdrives.ender_disk_16k": "16k エンダーアイテムストレージセル",
+  "item.enderdrives.ender_disk_64k": "64k エンダーアイテムストレージセル",
+  "item.enderdrives.ender_disk_256k": "256k エンダーアイテムストレージセル",
+  "item.enderdrives.ender_disk_creative": "クリエイティブエンダーアイテムストレージセル",
+  "enderdrives.transfer_mode.bidirectional": "双方向",
+  "enderdrives.transfer_mode.input": "入力のみ",
+  "enderdrives.transfer_mode.output": "出力のみ"
+}
