@@ -4,10 +4,13 @@ import appeng.api.config.Actionable;
 import appeng.api.networking.security.IActionSource;
 import appeng.api.stacks.AEItemKey;
 import appeng.api.stacks.AEKey;
+import appeng.api.stacks.AEKeyType;
 import appeng.api.stacks.KeyCounter;
 import appeng.api.storage.cells.CellState;
 import appeng.api.storage.cells.ICellHandler;
 import appeng.api.storage.cells.StorageCell;
+import appeng.items.contents.CellConfig;
+import appeng.util.ConfigInventory;
 import com.sts15.enderdrives.db.AEKeyCacheEntry;
 import com.sts15.enderdrives.db.EnderDBManager;
 import com.sts15.enderdrives.items.EnderDiskItem;
@@ -69,6 +72,7 @@ public class EnderDiskInventory implements StorageCell {
         int transferMode = EnderDiskItem.getTransferMode(stack);
         if (transferMode == 2) return 0;
         if (!(what instanceof AEItemKey itemKey)) return 0;
+        if (!passesFilter(itemKey)) { return 0; }
         ItemStack toInsert = itemKey.toStack();
         byte[] serialized = serializeItemStackToBytes(toInsert);
         if (serialized.length == 0) return 0;
@@ -95,6 +99,19 @@ public class EnderDiskInventory implements StorageCell {
         }
         log("Extract called: freq=%d scopePrefix=%s request=%d stored=%d toExtract=%d mode=%s", frequency, scopePrefix, amount, current, toExtractCount, mode);
         return toExtractCount;
+    }
+
+    private boolean passesFilter(AEKey key) {
+        ConfigInventory configInv = CellConfig.create(Set.of(AEKeyType.items()), stack);
+        for (int i = 0; i < configInv.size(); i++) {
+            AEKey slotKey = configInv.getKey(i);
+            if (slotKey == null) continue;
+            if (slotKey.equals(key)) {
+                return true;
+            }
+        }
+        boolean hasAnyFilter = !configInv.keySet().isEmpty();
+        return !hasAnyFilter;
     }
 
     @Override
