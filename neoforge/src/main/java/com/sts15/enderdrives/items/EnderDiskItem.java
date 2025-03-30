@@ -8,15 +8,11 @@ import appeng.items.contents.CellConfig;
 import appeng.menu.locator.ItemMenuHostLocator;
 import appeng.util.ConfigInventory;
 import appeng.util.Platform;
-import com.sts15.enderdrives.client.EnderDiskTooltipComponent;
 import com.sts15.enderdrives.db.ClientDiskCache;
 import com.sts15.enderdrives.db.DiskTypeInfo;
-import com.sts15.enderdrives.db.EnderDBManager;
+import com.sts15.enderdrives.integration.FTBTeamsCompat;
 import com.sts15.enderdrives.network.NetworkHandler;
 import com.sts15.enderdrives.screen.EnderDiskFrequencyScreen;
-import dev.ftb.mods.ftbteams.api.FTBTeamsAPI;
-import dev.ftb.mods.ftbteams.api.TeamManager;
-import dev.ftb.mods.ftbteams.api.property.TeamProperties;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
@@ -25,7 +21,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.inventory.tooltip.TooltipComponent;
 import net.minecraft.world.item.*;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Level;
@@ -36,7 +31,6 @@ import net.neoforged.fml.ModList;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem {
@@ -72,43 +66,51 @@ public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem
         int scope = getScope(stack);
         String scopePrefix = getSafeScopePrefix(stack);
         String key = scopePrefix + "|" + freq;
+
         NetworkHandler.requestDiskTypeCount(scopePrefix, freq, getTypeLimit());
         DiskTypeInfo info = ClientDiskCache.get(key);
         int typeCount = info.typeCount();
         int typeLimit = info.typeLimit();
-        int percentFull = (int) ((typeLimit == 0) ? 0 : ((typeCount * 100.0) / typeLimit));
-        String color;
+        int percentFull = (typeLimit == 0) ? 0 : (typeCount * 100 / typeLimit);
+
+        int limitColor = 0x866dfc;
+        int usageColor;
         if (typeCount >= typeLimit) {
-            color = "§e"; // Red
+            usageColor = 0xFF5555;
         } else if (percentFull >= 75) {
-            color = "§e"; // Yellow
+            usageColor = 0xFFAA00;
         } else {
-            color = "§a"; // Green
+            usageColor = 0x55FF55;
         }
-        lines.add(Component.literal(color + typeCount + "§7 of §9" + typeLimit + "§7 Types"));
-        lines.add(Component.literal("§7Frequency: §e" + freq));
+        lines.add(Component.translatable("tooltip.enderdrives.types",
+                Component.literal(String.valueOf(typeCount)).withStyle(style -> style.withColor(usageColor)),
+                Component.literal(String.valueOf(typeLimit)).withStyle(style -> style.withColor(limitColor))
+        ));
+        lines.add(Component.translatable("tooltip.enderdrives.frequency", freq)
+                .withStyle(style -> style.withColor(0xFFFF55)));
         int mode = getTransferMode(stack);
-        String modeText = switch (mode) {
-            case 1 -> "§7Mode: §9Input Only";
-            case 2 -> "§7Mode: §cOutput Only";
-            default -> "§7Mode: §aBidirectional";
+        String modeKey = switch (mode) {
+            case 1 -> "tooltip.enderdrives.mode.input";
+            case 2 -> "tooltip.enderdrives.mode.output";
+            default -> "tooltip.enderdrives.mode.bidirectional";
         };
-        lines.add(Component.literal(modeText));
-        String scopeName = switch (scope) {
+        lines.add(Component.translatable(modeKey));
+        Component scopeLine = switch (scope) {
             case 1 -> {
                 UUID owner = getOwnerUUID(stack);
                 String name = (player != null && owner != null && player.getUUID().equals(owner))
                         ? player.getName().getString()
-                        : (owner != null ? owner.toString() : "Unknown");
-                yield "§7Private: §e" + name;
+                        : (owner != null ? owner.toString() : Component.translatable("tooltip.enderdrives.unknown").getString());
+                yield Component.translatable("tooltip.enderdrives.scope.private", name);
             }
             case 2 -> {
                 String teamName = getStoredTeamName(stack);
-                yield "§7Team: §e" + (teamName != null ? teamName : "Unknown");
+                yield Component.translatable("tooltip.enderdrives.scope.team",
+                        teamName != null ? teamName : Component.translatable("tooltip.enderdrives.unknown"));
             }
-            default -> "§7Global";
+            default -> Component.translatable("tooltip.enderdrives.scope.global");
         };
-        lines.add(Component.literal(scopeName));
+        lines.add(scopeLine);
     }
 
     public static void setTeamInfo(ItemStack stack, String teamId, String teamName) {
@@ -121,31 +123,11 @@ public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem
     }
 
     public static void updateTeamInfo(ItemStack stack, Player player) {
-        if (player == null || player.level().isClientSide) return;
-        UUID playerUUID = player.getUUID();
-        TeamManager manager = FTBTeamsAPI.api().getManager();
-        if (manager == null) return;
-        manager.getTeamForPlayerID(playerUUID).ifPresent(team -> {
-            UUID ownerUUID = team.getOwner();
-            String displayName = team.getProperty(TeamProperties.DISPLAY_NAME);
-            String teamId = ownerUUID.toString();
-            setTeamId(stack, teamId);
-            setOwnerUUID(stack, ownerUUID);
-            stack.update(DataComponents.CUSTOM_DATA, CustomData.EMPTY, oldData -> {
-                CompoundTag tag = oldData.copyTag();
-                tag.putString(TEAM_NAME_KEY, displayName != null ? displayName : "Unknown");
-                return CustomData.of(tag);
-            });
-        });
-    }
+        if (!ModList.get().isLoaded("ftbteams")) return;
 
-    @Override
-    public Optional<TooltipComponent> getTooltipImage(ItemStack stack) {
-        String scopePrefix = getSafeScopePrefix(stack);
-        int freq = getFrequency(stack);
-        var topItems = ClientDiskCache.getTopStacks(scopePrefix, freq);
-        if (topItems.isEmpty()) return Optional.empty();
-        return Optional.of(new EnderDiskTooltipComponent(topItems));
+        try {
+            FTBTeamsCompat.updateTeamInfo(stack, player);
+        } catch (Throwable ignored) {}
     }
 
     @Nullable
@@ -271,18 +253,13 @@ public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem
     }
 
 
-    public static void resolveAndCacheTeamInfo(ItemStack stack, ServerPlayer serverPlayer) {
+    public static void resolveAndCacheTeamInfo(ItemStack stack, ServerPlayer player) {
         if (!ModList.get().isLoaded("ftbteams")) return;
-        var manager = FTBTeamsAPI.api().getManager();
-        if (manager == null) return;
-        manager.getTeamForPlayer(serverPlayer).ifPresent(team -> {
-            UUID ownerUUID = team.getOwner();
-            String displayName = team.getProperty(TeamProperties.DISPLAY_NAME);
-            String teamId = ownerUUID.toString();
-            setTeamInfo(stack, teamId, displayName != null ? displayName : "Unknown");
-            setOwnerUUID(stack, ownerUUID);
-        });
+        try {
+            FTBTeamsCompat.updateTeamInfo(stack, player);
+        } catch (Throwable ignored) {}
     }
+
 
     @Override
     public @Nullable ItemMenuHost<?> getMenuHost(Player player, ItemMenuHostLocator locator, @Nullable BlockHitResult hitResult) {

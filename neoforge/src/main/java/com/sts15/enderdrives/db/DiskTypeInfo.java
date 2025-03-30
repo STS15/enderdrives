@@ -4,4 +4,10 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
 
-public record DiskTypeInfo(int typeCount, int typeLimit, List<ItemStack> topStacks) {}
+public record DiskTypeInfo(
+        int typeCount,
+        int typeLimit,
+        long totalItemCount,
+        List<ItemStack> topStacks
+) {}
+

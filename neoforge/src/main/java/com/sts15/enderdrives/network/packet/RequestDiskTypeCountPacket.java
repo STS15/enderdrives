@@ -9,7 +9,10 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+
+import java.util.List;
 
 public class RequestDiskTypeCountPacket implements CustomPacketPayload {
     public static final Type<RequestDiskTypeCountPacket> TYPE =
@@ -40,12 +43,18 @@ public class RequestDiskTypeCountPacket implements CustomPacketPayload {
     public static void handle(RequestDiskTypeCountPacket packet, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player) {
-                int count = EnderDBManager.getTypeCount(packet.scopePrefix,packet.frequency);
-                int limit = packet.typeLimit();
-                NetworkHandler.sendToClient(player, new UpdateDiskTypeCountPacket(packet.scopePrefix, packet.frequency, count, limit));
+                int typeCount = EnderDBManager.getTypeCount(packet.scopePrefix, packet.frequency);
+                long totalCount = EnderDBManager.getTotalItemCount(packet.scopePrefix, packet.frequency);
+                int typeLimit = packet.typeLimit();
+                List<ItemStack> topStacks = EnderDBManager.getTopStacks(packet.scopePrefix, packet.frequency, 5);
+
+                NetworkHandler.sendToClient(player,
+                        new UpdateDiskTypeCountPacket(packet.scopePrefix, packet.frequency, typeCount, typeLimit, totalCount, topStacks)
+                );
             }
         });
     }
+
 
     private int typeLimit() {
         return typeLimit;

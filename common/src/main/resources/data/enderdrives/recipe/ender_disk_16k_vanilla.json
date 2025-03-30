@@ -1,0 +1,55 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "GPG",
+    "DCD",
+    "MEM"
+  ],
+  "key": {
+    "G": {
+      "item": "ae2:quartz_vibrant_glass"
+    },
+    "C": {
+      "item": "enderdrives:ender_storage_component_16k"
+    },
+    "E": {
+      "item": "minecraft:ender_chest"
+    },
+    "D": {
+      "item": "ae2:sky_dust"
+    },
+    "M": {
+      "item": "minecraft:netherite_ingot"
+    },
+    "P": {
+      "item": "ae2:calculation_processor"
+    }
+  },
+  "result": {
+    "id": "enderdrives:ender_disk_16k",
+    "count": 1
+  },
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:not",
+      "value": {
+        "type": "neoforge:mod_loaded",
+        "modid": "advanced_ae"
+      }
+    },
+    {
+      "type": "neoforge:not",
+      "value": {
+        "type": "neoforge:mod_loaded",
+        "modid": "megacells"
+      }
+    },
+    {
+      "type": "neoforge:not",
+      "value": {
+        "type": "neoforge:mod_loaded",
+        "modid": "extendedae"
+      }
+    }
+  ]
+}

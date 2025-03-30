@@ -46,7 +46,7 @@ public class EnderDiskFrequencyScreen extends Screen {
         return ResourceLocation.fromNamespaceAndPath(MOD_ID,
                 useAltTheme ? "textures/gui/scope_button_hover_alt.png" : "textures/gui/scope_button_hover.png");
     }
-    private static final Component TITLE = Component.literal("Ender Frequency Selector");
+    private static final Component TITLE = Component.translatable("screen.enderdrives.frequency_selector");
     public static final int WINDOW_WIDTH = 176;
     public static final int WINDOW_HEIGHT = 105;
     private int leftPos, topPos;
@@ -75,7 +75,7 @@ public class EnderDiskFrequencyScreen extends Screen {
     public static final int SHADOW_COLOR = useAltTheme ? 0x993F00 : 0xFFFFFF;
 
     public EnderDiskFrequencyScreen(int currentFrequency, int scopeId, int transferMode) {
-        super(Component.literal("EnderDisk Frequency"));
+        super(Component.translatable("screen.enderdrives.frequency"));
         this.frequency = currentFrequency;
         this.currentScope = FrequencyScope.fromId(scopeId);
         this.transferMode = transferMode;
@@ -93,7 +93,7 @@ public class EnderDiskFrequencyScreen extends Screen {
                 Minecraft.getInstance().font,
                 fieldX, fieldY,
                 70, 12,
-                Component.literal("Frequency")
+                Component.translatable("screen.enderdrives.frequency_placeholder")
         );
         frequencyField.setMaxLength(4);
         frequencyField.setValue(String.valueOf(frequency));
@@ -141,7 +141,7 @@ public class EnderDiskFrequencyScreen extends Screen {
         if (frequencyField.getValue().isEmpty() && !frequencyField.isFocused()) {
             graphics.drawString(
                     Minecraft.getInstance().font,
-                    Component.literal("Frequency..."),
+                    Component.translatable("screen.enderdrives.frequency_label"),
                     frequencyField.getX() + 2,
                     frequencyField.getY() + 2,
                     TEXT_COLOR,
@@ -156,11 +156,11 @@ public class EnderDiskFrequencyScreen extends Screen {
             int bottomY = topPos + ARROW_BOTTOM_Y;
             int size = 16;
             if (isHovering(mouseX, mouseY, topX, topY, size, size)) {
-                graphics.renderTooltip(font, Component.literal(getTooltipText(i, true)), mouseX, mouseY);
+                graphics.renderTooltip(font, Component.translatable(getTooltipText(i, true)), mouseX, mouseY);
                 return;
             }
             if (isHovering(mouseX, mouseY, bottomX, bottomY, size, size)) {
-                graphics.renderTooltip(font, Component.literal(getTooltipText(i, false)), mouseX, mouseY);
+                graphics.renderTooltip(font, Component.translatable(getTooltipText(i, false)), mouseX, mouseY);
                 return;
             }
         }
@@ -190,7 +190,9 @@ public class EnderDiskFrequencyScreen extends Screen {
             default -> 0;
         };
 
-        return isTop ? "+" + value : "-" + value;
+        return isTop
+                ? "screen.enderdrives.tooltip.plus_" + value
+                : "screen.enderdrives.tooltip.minus_" + value;
     }
 
     private void drawCustomBackground(GuiGraphics graphics) {
@@ -415,13 +417,13 @@ class CustomImageButton extends Button {
     public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         ResourceLocation texture = isHovered ? hoverTexture : normalTexture;
         graphics.blit(texture, getX(), getY(), 0, 0, width, height, width, height);
-        Component label = Component.literal(parent.currentScope.label);
+        Component label = Component.translatable(parent.currentScope.translationKey());
         int textWidth = Minecraft.getInstance().font.width(label);
         int textX = getX() + (width - textWidth) / 2;
         int textY = getY() + (height - 8) / 2 ;//- (EnderDiskFrequencyScreen.useAltTheme ? 1 : 0);
         graphics.drawString(Minecraft.getInstance().font, label, textX, textY, EnderDiskFrequencyScreen.TEXT_COLOR, false);
         if (isHovered) {
-            graphics.renderTooltip(Minecraft.getInstance().font, Component.literal("Click to toggle scope"), mouseX, mouseY);
+            graphics.renderTooltip(Minecraft.getInstance().font, Component.translatable("screen.enderdrives.toggle_scope"), mouseX, mouseY);
         }
     }
 }
