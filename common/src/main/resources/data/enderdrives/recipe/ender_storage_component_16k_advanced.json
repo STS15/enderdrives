@@ -1,0 +1,32 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "SCS",
+    "1G1",
+    "S1S"
+  ],
+  "key": {
+    "1": {
+      "item": "enderdrives:ender_storage_component_4k"
+    },
+    "G": {
+      "item": "ae2:quartz_vibrant_glass"
+    },
+    "S": {
+      "item": "advanced_ae:shattered_singularity"
+    },
+    "C": {
+      "item": "advanced_ae:quantum_processor"
+    }
+  },
+  "result": {
+    "id": "enderdrives:ender_storage_component_16k",
+    "count": 1
+  },
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "advanced_ae"
+    }
+  ]
+}

@@ -16,7 +16,11 @@ public class NetworkHandler {
                 .optional();
 
         registrar.playToServer(UpdateFrequencyPacket.TYPE, UpdateFrequencyPacket.STREAM_CODEC, UpdateFrequencyPacket::handle);
-        registrar.playToClient(UpdateDiskTypeCountPacket.TYPE, UpdateDiskTypeCountPacket.STREAM_CODEC, UpdateDiskTypeCountPacket::handle);
+        registrar.playToClient(
+                UpdateDiskTypeCountPacket.TYPE,
+                UpdateDiskTypeCountPacket.STREAM_CODEC.cast(),
+                UpdateDiskTypeCountPacket::handle
+        );
         registrar.playToServer(RequestDiskTypeCountPacket.TYPE, RequestDiskTypeCountPacket.STREAM_CODEC, RequestDiskTypeCountPacket::handle);
     }
 

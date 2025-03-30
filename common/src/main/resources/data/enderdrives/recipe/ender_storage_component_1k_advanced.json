@@ -1,0 +1,29 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "SES",
+    "E1E",
+    "SES"
+  ],
+  "key": {
+    "1": {
+      "item": "advanced_ae:quantum_storage_component"
+    },
+    "E": {
+      "item": "minecraft:ender_eye"
+    },
+    "S": {
+      "item": "advanced_ae:shattered_singularity"
+    }
+  },
+  "result": {
+    "id": "enderdrives:ender_storage_component_1k",
+    "count": 1
+  },
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "advanced_ae"
+    }
+  ]
+}

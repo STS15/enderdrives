@@ -20,18 +20,33 @@ import net.neoforged.fml.ModList;
 import org.joml.Matrix4f;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Random;
 import static com.sts15.enderdrives.Constants.MOD_ID;
+import static com.sts15.enderdrives.screen.EnderDiskFrequencyScreen.useAltTheme;
 
 public class EnderDiskFrequencyScreen extends Screen {
 
-    private static final ResourceLocation ENDER_DISK_MASK = ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/ender_disk_mask.png");
-    private static final ResourceLocation ARROW_UP_HOVER = ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/up_arrow_highlight.png");
-    private static final ResourceLocation ARROW_DOWN_HOVER = ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/down_arrow_highlight.png");
-    private static final ResourceLocation BUTTON_TEXTURE = ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/scope_button.png");
-    private static final ResourceLocation BUTTON_HOVER_TEXTURE = ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/scope_button_hover.png");
-    private static final Component TITLE = Component.literal("Ender Frequency Selector");
+    private ResourceLocation getEnderDiskMask() {
+        return ResourceLocation.fromNamespaceAndPath(MOD_ID,
+                useAltTheme ? "textures/gui/ender_disk_mask_alt.png" : "textures/gui/ender_disk_mask.png");
+    }
+    private ResourceLocation getArrowUpHover() {
+        return ResourceLocation.fromNamespaceAndPath(MOD_ID,
+                useAltTheme ? "textures/gui/up_arrow_highlight_alt.png" : "textures/gui/up_arrow_highlight.png");
+    }
+    private ResourceLocation getArrowDownHover() {
+        return ResourceLocation.fromNamespaceAndPath(MOD_ID,
+                useAltTheme ? "textures/gui/down_arrow_highlight_alt.png" : "textures/gui/down_arrow_highlight.png");
+    }
+    private ResourceLocation getButtonTexture() {
+        return ResourceLocation.fromNamespaceAndPath(MOD_ID,
+                useAltTheme ? "textures/gui/scope_button_alt.png" : "textures/gui/scope_button.png");
+    }
+    private ResourceLocation getButtonHoverTexture() {
+        return ResourceLocation.fromNamespaceAndPath(MOD_ID,
+                useAltTheme ? "textures/gui/scope_button_hover_alt.png" : "textures/gui/scope_button_hover.png");
+    }
+    private static final Component TITLE = Component.translatable("screen.enderdrives.frequency_selector");
     public static final int WINDOW_WIDTH = 176;
     public static final int WINDOW_HEIGHT = 105;
     private int leftPos, topPos;
@@ -55,15 +70,17 @@ public class EnderDiskFrequencyScreen extends Screen {
     private final Random random = new Random();
     private int transferMode = TransferMode.BIDIRECTIONAL;
     private CustomImageCycleButton transferButton;
+    public static boolean useAltTheme = true;
+    public static final int TEXT_COLOR = useAltTheme ? 0xFFE44C : 0xFFFFFF;
+    public static final int SHADOW_COLOR = useAltTheme ? 0x993F00 : 0xFFFFFF;
 
     public EnderDiskFrequencyScreen(int currentFrequency, int scopeId, int transferMode) {
-        super(Component.literal("EnderDisk Frequency"));
+        super(Component.translatable("screen.enderdrives.frequency"));
         this.frequency = currentFrequency;
         this.currentScope = FrequencyScope.fromId(scopeId);
         this.transferMode = transferMode;
         decodeFrequency();
     }
-
 
     @Override
     protected void init() {
@@ -76,19 +93,21 @@ public class EnderDiskFrequencyScreen extends Screen {
                 Minecraft.getInstance().font,
                 fieldX, fieldY,
                 70, 12,
-                Component.literal("Frequency")
+                Component.translatable("screen.enderdrives.frequency_placeholder")
         );
         frequencyField.setMaxLength(4);
         frequencyField.setValue(String.valueOf(frequency));
         frequencyField.setResponder(this::onFrequencyFieldChanged);
         frequencyField.setBordered(false);
         frequencyField.setVisible(true);
-        frequencyField.setTextColor(0xFFFFFF);
+        frequencyField.setTextColor(TEXT_COLOR);
+        frequencyField.setTextShadow(true);
         frequencyField.setCanLoseFocus(true);
         this.addRenderableWidget(frequencyField);
 
+        int transferButtonX = leftPos + (useAltTheme ? 102 : 100);
         transferButton = new CustomImageCycleButton(
-                leftPos + 100, topPos + 85,
+                transferButtonX, topPos + 85,
                 15, 14,
                 b -> {
                     transferMode = TransferMode.next(transferMode);
@@ -96,15 +115,15 @@ public class EnderDiskFrequencyScreen extends Screen {
                 },
                 transferMode
         );
-
         this.addRenderableWidget(transferButton);
 
+        int scopeButtonX = leftPos + (useAltTheme ? 120 : 118);
         Button customButton = new CustomImageButton(
-                leftPos + 118, topPos + 85,
+                scopeButtonX, topPos + 85,
                 50, 14,
                 b -> cycleScope(),
-                BUTTON_TEXTURE,
-                BUTTON_HOVER_TEXTURE,
+                getButtonTexture(),
+                getButtonHoverTexture(),
                 this
         );
         this.addRenderableWidget(customButton);
@@ -113,20 +132,19 @@ public class EnderDiskFrequencyScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         renderUIParticles(graphics, partialTick);
-        drawCustomBackground(graphics);
         drawColorSelectors(graphics);
+        drawCustomBackground(graphics);
         drawTitle(graphics);
         drawArrowButtons(graphics, mouseX, mouseY);
         super.render(graphics, mouseX, mouseY, partialTick);
 
         if (frequencyField.getValue().isEmpty() && !frequencyField.isFocused()) {
-            int placeholderColor = 0x413F54;
             graphics.drawString(
                     Minecraft.getInstance().font,
-                    Component.literal("Frequency..."),
+                    Component.translatable("screen.enderdrives.frequency_label"),
                     frequencyField.getX() + 2,
                     frequencyField.getY() + 2,
-                    placeholderColor,
+                    TEXT_COLOR,
                     false
             );
         }
@@ -138,11 +156,11 @@ public class EnderDiskFrequencyScreen extends Screen {
             int bottomY = topPos + ARROW_BOTTOM_Y;
             int size = 16;
             if (isHovering(mouseX, mouseY, topX, topY, size, size)) {
-                graphics.renderTooltip(font, Component.literal(getTooltipText(i, true)), mouseX, mouseY);
+                graphics.renderTooltip(font, Component.translatable(getTooltipText(i, true)), mouseX, mouseY);
                 return;
             }
             if (isHovering(mouseX, mouseY, bottomX, bottomY, size, size)) {
-                graphics.renderTooltip(font, Component.literal(getTooltipText(i, false)), mouseX, mouseY);
+                graphics.renderTooltip(font, Component.translatable(getTooltipText(i, false)), mouseX, mouseY);
                 return;
             }
         }
@@ -172,7 +190,9 @@ public class EnderDiskFrequencyScreen extends Screen {
             default -> 0;
         };
 
-        return isTop ? "+" + value : "-" + value;
+        return isTop
+                ? "screen.enderdrives.tooltip.plus_" + value
+                : "screen.enderdrives.tooltip.minus_" + value;
     }
 
     private void drawCustomBackground(GuiGraphics graphics) {
@@ -191,7 +211,7 @@ public class EnderDiskFrequencyScreen extends Screen {
         vertexConsumer.addVertex(matrix, shaderX, shaderY, 0).setColor(255, 255, 255, 255).setUv(0, 0);
         bufferSource.endBatch(RenderType.endPortal());
         graphics.pose().popPose();
-        graphics.blit(ENDER_DISK_MASK, leftPos, topPos, 0, 0, 176, 105);
+        graphics.blit(getEnderDiskMask(), leftPos, topPos, 0, 0, 176, 105);
     }
 
     private void renderUIParticles(GuiGraphics graphics, float partialTick) {
@@ -256,7 +276,7 @@ public class EnderDiskFrequencyScreen extends Screen {
             int y = topPos + SELECTOR_Y - 2;
             DyeColor dye = DyeColor.byId(dyeIndices[i]);
             int color = dye.getTextColor();
-            fillRoundedRect(graphics, x, y, 16, 29, 3, FastColor.ARGB32.color(255, color));
+            fillRoundedRect(graphics, x, y, 16, 30, 3, FastColor.ARGB32.color(255, color));
         }
     }
 
@@ -282,10 +302,10 @@ public class EnderDiskFrequencyScreen extends Screen {
 
     private void drawTitle(GuiGraphics graphics) {
         int titleX = leftPos + 12;
-        int titleY = topPos + 4;
-
-        graphics.drawString(Minecraft.getInstance().font, TITLE, titleX, titleY, 0xFFFFFF, false);
+        int titleY = topPos + (useAltTheme ? 6 : 4); // Already adjusted
+        graphics.drawString(Minecraft.getInstance().font, TITLE, titleX, titleY, TEXT_COLOR, false);
     }
+
 
     private void drawArrowButtons(GuiGraphics graphics, int mouseX, int mouseY) {
         for (int i = 0; i < 3; i++) {
@@ -294,11 +314,11 @@ public class EnderDiskFrequencyScreen extends Screen {
             int bottomX = leftPos + ARROW_BOTTOM_X[i];
             int bottomY = topPos + ARROW_BOTTOM_Y + 1;
             if (isHovering(mouseX, mouseY, topX + 4, topY + 2, ARROW_WIDTH, ARROW_HEIGHT)) {
-                graphics.blit(ARROW_UP_HOVER, topX, topY, 0, 0, ARROW_SPRITE_SIZE, ARROW_SPRITE_SIZE, ARROW_SPRITE_SIZE, ARROW_SPRITE_SIZE);
+                graphics.blit(getArrowUpHover(), topX, topY, 0, 0, ARROW_SPRITE_SIZE, ARROW_SPRITE_SIZE, ARROW_SPRITE_SIZE, ARROW_SPRITE_SIZE);
             }
 
             if (isHovering(mouseX, mouseY, bottomX + 4, bottomY + 2, ARROW_WIDTH, ARROW_HEIGHT)) {
-                graphics.blit(ARROW_DOWN_HOVER, bottomX, bottomY, 0, 0, ARROW_SPRITE_SIZE, ARROW_SPRITE_SIZE, ARROW_SPRITE_SIZE, ARROW_SPRITE_SIZE);
+                graphics.blit(getArrowDownHover(), bottomX, bottomY, 0, 0, ARROW_SPRITE_SIZE, ARROW_SPRITE_SIZE, ARROW_SPRITE_SIZE, ARROW_SPRITE_SIZE);
             }
         }
     }
@@ -397,13 +417,13 @@ class CustomImageButton extends Button {
     public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         ResourceLocation texture = isHovered ? hoverTexture : normalTexture;
         graphics.blit(texture, getX(), getY(), 0, 0, width, height, width, height);
-        Component label = Component.literal(parent.currentScope.label);
+        Component label = Component.translatable(parent.currentScope.translationKey());
         int textWidth = Minecraft.getInstance().font.width(label);
         int textX = getX() + (width - textWidth) / 2;
-        int textY = getY() + (height - 8) / 2;
-        graphics.drawString(Minecraft.getInstance().font, label, textX, textY, 0xFFFFFF, false);
+        int textY = getY() + (height - 8) / 2 ;//- (EnderDiskFrequencyScreen.useAltTheme ? 1 : 0);
+        graphics.drawString(Minecraft.getInstance().font, label, textX, textY, EnderDiskFrequencyScreen.TEXT_COLOR, false);
         if (isHovered) {
-            graphics.renderTooltip(Minecraft.getInstance().font, Component.literal("Click to toggle scope"), mouseX, mouseY);
+            graphics.renderTooltip(Minecraft.getInstance().font, Component.translatable("screen.enderdrives.toggle_scope"), mouseX, mouseY);
         }
     }
 }
@@ -467,17 +487,40 @@ class CustomImageCycleButton extends Button {
 
     private ResourceLocation getTexture(int mode, boolean hover) {
         return switch (mode) {
-            case TransferMode.INPUT_ONLY -> hover ?
-                    ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/transport_input_hover.png") :
-                    ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/transport_input.png");
-
-            case TransferMode.OUTPUT_ONLY -> hover ?
-                    ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/transport_output_hover.png") :
-                    ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/transport_output.png");
-
-            default -> hover ?
-                    ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/transport_bidirectional_hover.png") :
-                    ResourceLocation.fromNamespaceAndPath(MOD_ID, "textures/gui/transport_bidirectional.png");
+            case TransferMode.INPUT_ONLY -> hover ? getInputHoverTexture() : getInputTexture();
+            case TransferMode.OUTPUT_ONLY -> hover ? getOutputHoverTexture() : getOutputTexture();
+            default -> hover ? getBidirectionalHoverTexture() : getBidirectionalTexture();
         };
     }
+
+    private ResourceLocation getInputTexture() {
+        return ResourceLocation.fromNamespaceAndPath(MOD_ID,
+                useAltTheme ? "textures/gui/transport_input_alt.png" : "textures/gui/transport_input.png");
+    }
+
+    private ResourceLocation getInputHoverTexture() {
+        return ResourceLocation.fromNamespaceAndPath(MOD_ID,
+                useAltTheme ? "textures/gui/transport_input_hover_alt.png" : "textures/gui/transport_input_hover.png");
+    }
+
+    private ResourceLocation getOutputTexture() {
+        return ResourceLocation.fromNamespaceAndPath(MOD_ID,
+                useAltTheme ? "textures/gui/transport_output_alt.png" : "textures/gui/transport_output.png");
+    }
+
+    private ResourceLocation getOutputHoverTexture() {
+        return ResourceLocation.fromNamespaceAndPath(MOD_ID,
+                useAltTheme ? "textures/gui/transport_output_hover_alt.png" : "textures/gui/transport_output_hover.png");
+    }
+
+    private ResourceLocation getBidirectionalTexture() {
+        return ResourceLocation.fromNamespaceAndPath(MOD_ID,
+                useAltTheme ? "textures/gui/transport_bidirectional_alt.png" : "textures/gui/transport_bidirectional.png");
+    }
+
+    private ResourceLocation getBidirectionalHoverTexture() {
+        return ResourceLocation.fromNamespaceAndPath(MOD_ID,
+                useAltTheme ? "textures/gui/transport_bidirectional_hover_alt.png" : "textures/gui/transport_bidirectional_hover.png");
+    }
+
 }
