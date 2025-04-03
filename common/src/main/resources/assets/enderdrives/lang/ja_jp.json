@@ -13,7 +13,7 @@
   "item.enderdrives.ender_disk_creative": "クリエイティブエンダーアイテムストレージセル",
   "enderdrives.transfer_mode.bidirectional": "双方向",
   "enderdrives.transfer_mode.input": "入力のみ",
-  "enderdrives.transfer_mode.output": 出力のみ",
+  "enderdrives.transfer_mode.output": "出力のみ",
   "screen.enderdrives.frequency_selector": "エンダー周波数セレクター",
   "screen.enderdrives.frequency": "エンダーディスク周波数",
   "screen.enderdrives.frequency_placeholder": "周波数...",
