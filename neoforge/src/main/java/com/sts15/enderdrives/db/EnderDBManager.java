@@ -4,6 +4,8 @@ import appeng.api.stacks.AEItemKey;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.storage.LevelResource;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
@@ -13,9 +15,11 @@ import java.util.zip.CRC32;
 import static com.sts15.enderdrives.inventory.EnderDiskInventory.deserializeItemStackFromBytes;
 
 public class EnderDBManager {
-    private static final ConcurrentSkipListMap<AEKey, StoredEntry> dbMap = new ConcurrentSkipListMap<>();
+
+    private static final Logger LOGGER = LogManager.getLogger("EnderDrives");
+    public static final ConcurrentSkipListMap<AEKey, StoredEntry> dbMap = new ConcurrentSkipListMap<>();
     private static final BlockingQueue<byte[]> walQueue = new LinkedBlockingQueue<>();
-    private static final ConcurrentHashMap<AEKey, Long> deltaBuffer = new ConcurrentHashMap<>();
+    public static final ConcurrentHashMap<AEKey, Long> deltaBuffer = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, CachedCount> itemCountCache = new ConcurrentHashMap<>();
     private static final int MERGE_BUFFER_THRESHOLD = 1000;
     private static File dbFile, currentWAL;
@@ -31,6 +35,8 @@ public class EnderDBManager {
     private static final long MIN_DB_COMMIT_INTERVAL_MS = 5000;
     private static final long MAX_DB_COMMIT_INTERVAL_MS = 60000;
     private static final boolean DEBUG_LOG = false;
+    private static final ForkJoinPool SHARED_PARALLEL_POOL =
+            new ForkJoinPool(Math.min(4, Runtime.getRuntime().availableProcessors()));
 
 // ==== Public API ====
 
@@ -51,7 +57,7 @@ public class EnderDBManager {
             loadDatabase();
             startBackgroundCommit();
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                System.out.println("[EnderDB] Shutdown hook triggered.");
+                LOGGER.info("Shutdown hook triggered.");
                 shutdown();
             }));
         } catch (IOException e) {
@@ -96,13 +102,16 @@ public class EnderDBManager {
      *
      * @param scopePrefix The scope name.
      * @param freq        The frequency ID.
-     * @param itemNbtBinary The serialized item key.
+     * @param keyBytes The serialized item key.
      * @return The current stored count for the item.
      */
-    public static long getItemCount(String scopePrefix, int freq, byte[] itemNbtBinary) {
-        AEKey key = new AEKey(scopePrefix, freq, itemNbtBinary);
-        return dbMap.getOrDefault(key, new StoredEntry(0L, null)).count();
+    public static long getItemCount(String scopePrefix, int freq, byte[] keyBytes) {
+        AEKey key = new AEKey(scopePrefix, freq, keyBytes);
+        long committed = dbMap.getOrDefault(key, new StoredEntry(0L, null)).count();
+        long pending = deltaBuffer.getOrDefault(key, 0L);
+        return committed + pending;
     }
+
 
     /**
      * Clears all entries for a given frequency and scope.
@@ -140,20 +149,31 @@ public class EnderDBManager {
      * @return A list of matching cache entries.
      */
     public static List<AEKeyCacheEntry> queryItemsByFrequency(String scopePrefix, int freq) {
-        List<AEKeyCacheEntry> result = new ArrayList<>();
-        for (Map.Entry<AEKey, StoredEntry> entry : dbMap.entrySet()) {
-            AEKey key = entry.getKey();
-            if (key.scope().equals(scopePrefix) && key.freq() == freq) {
-                StoredEntry stored = entry.getValue();
-                AEItemKey aeKey = stored.aeKey();
-                if (aeKey != null) {
-                    result.add(new AEKeyCacheEntry(key, aeKey, stored.count()));
-                }
-            }
+        AEKey from = new AEKey(scopePrefix, freq, new byte[0]);
+        AEKey to = new AEKey(scopePrefix, freq + 1, new byte[0]);
+
+        NavigableMap<AEKey, StoredEntry> subMap = dbMap.subMap(from, true, to, false);
+
+        try {
+            return SHARED_PARALLEL_POOL.submit(() ->
+                    subMap.entrySet()
+                            .parallelStream()
+                            .map(entry -> {
+                                AEItemKey aeKey = entry.getValue().aeKey();
+                                if (aeKey != null) {
+                                    return new AEKeyCacheEntry(entry.getKey(), aeKey, entry.getValue().count());
+                                }
+                                return null; // skip invalids
+                            })
+                            .filter(Objects::nonNull)
+                            .toList()
+            ).get();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Collections.emptyList();
         }
-        log("QueryItemsByFrequency: scope=%s freq=%d entriesFound=%d", scopePrefix, freq, result.size());
-        return result;
     }
+
 
     public static long getTotalItemCount(String scopePrefix, int frequency) {
         String key = scopePrefix + "|" + frequency;
@@ -173,23 +193,34 @@ public class EnderDBManager {
 
     private static long calculateTotalItemCount(String scopePrefix, int frequency) {
         List<AEKeyCacheEntry> entries = queryItemsByFrequency(scopePrefix, frequency);
-        long total = 0L;
-        for (AEKeyCacheEntry entry : entries) {
-            total += entry.count();
+        try {
+            return SHARED_PARALLEL_POOL.submit(() ->
+                    entries.parallelStream()
+                            .mapToLong(AEKeyCacheEntry::count)
+                            .sum()
+            ).get();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return 0L;
         }
-        log("Total items calculated for scope=%s freq=%d: %d items across %d types",
-                scopePrefix, frequency, total, entries.size());
-        return total;
     }
 
     public static List<ItemStack> getTopStacks(String scopePrefix, int frequency, int max) {
         List<AEKeyCacheEntry> entries = queryItemsByFrequency(scopePrefix, frequency);
-        entries.sort(Comparator.comparingLong(AEKeyCacheEntry::count).reversed());
 
-        return entries.stream()
-                .limit(max)
-                .map(e -> e.aeKey().toStack((int) Math.min(e.count(), Integer.MAX_VALUE)))
-                .toList();
+        try {
+            return SHARED_PARALLEL_POOL.submit(() ->
+                    entries.stream()
+                            .sorted(Comparator.comparingLong(AEKeyCacheEntry::count).reversed())
+                            .limit(max)
+                            .parallel()
+                            .map(e -> e.aeKey().toStack((int) Math.min(e.count(), Integer.MAX_VALUE)))
+                            .toList()
+            ).get();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Collections.emptyList();
+        }
     }
 
     private record CachedCount(long count, long timestamp) {}
@@ -202,16 +233,34 @@ public class EnderDBManager {
             File temp = new File(dbFile.getAbsolutePath() + ".tmp");
             try (DataOutputStream dos = new DataOutputStream(
                     new BufferedOutputStream(new FileOutputStream(temp), 1024 * 512))) {
-                for (Map.Entry<AEKey, StoredEntry> entry : dbMap.entrySet()) {
-                    AEKey key = entry.getKey();
-                    long count = entry.getValue().count();
-                    dos.writeUTF(key.scope());
-                    dos.writeInt(key.freq());
-                    dos.writeInt(key.itemBytes().length);
-                    dos.write(key.itemBytes());
-                    dos.writeLong(count);
+
+                // Collect entries in parallel and write sequentially
+                List<byte[]> records = parallelCall(() ->
+                        dbMap.entrySet().parallelStream().map(entry -> {
+                            try {
+                                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                                DataOutputStream tmpDos = new DataOutputStream(baos);
+                                AEKey key = entry.getKey();
+                                long count = entry.getValue().count();
+                                tmpDos.writeUTF(key.scope());
+                                tmpDos.writeInt(key.freq());
+                                tmpDos.writeInt(key.itemBytes().length);
+                                tmpDos.write(key.itemBytes());
+                                tmpDos.writeLong(count);
+                                tmpDos.close();
+                                return baos.toByteArray();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                                return null;
+                            }
+                        }).filter(Objects::nonNull).toList(), List.of()
+                );
+
+                for (byte[] record : records) {
+                    dos.write(record);
                 }
             }
+
             Files.move(temp.toPath(), dbFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             dirty = false;
             log("Database committed successfully.");
@@ -219,7 +268,6 @@ public class EnderDBManager {
             e.printStackTrace();
         }
     }
-
 
 // ==== Public Getters / Stats ====
 
@@ -325,30 +373,40 @@ public class EnderDBManager {
     /**
      * Flushes the delta buffer into the WAL queue, preparing it for commit.
      */
-    private static void flushDeltaBuffer() {
-        for (Map.Entry<AEKey, Long> entry : deltaBuffer.entrySet()) {
-            AEKey key = entry.getKey();
-            long delta = entry.getValue();
-            if (delta == 0) continue;
+    public static void flushDeltaBuffer() {
+        List<Map.Entry<AEKey, Long>> snapshot = new ArrayList<>(deltaBuffer.entrySet());
+        deltaBuffer.clear();
 
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            try (DataOutputStream dos = new DataOutputStream(baos)) {
-                dos.writeUTF(key.scope());
-                dos.writeInt(key.freq());
-                dos.writeInt(key.itemBytes().length);
-                dos.write(key.itemBytes());
-                dos.writeLong(delta);
-            } catch (IOException e) {
-                e.printStackTrace();
-                continue;
-            }
+        List<byte[]> entries = parallelCall(() ->
+                snapshot.parallelStream()
+                        .filter(e -> e.getValue() != 0)
+                        .map(entry -> {
+                            try {
+                                AEKey key = entry.getKey();
+                                long delta = entry.getValue();
+                                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                                DataOutputStream dos = new DataOutputStream(baos);
+                                dos.writeUTF(key.scope());
+                                dos.writeInt(key.freq());
+                                dos.writeInt(key.itemBytes().length);
+                                dos.write(key.itemBytes());
+                                dos.writeLong(delta);
+                                dos.close();
+                                return baos.toByteArray();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                                return null;
+                            }
+                        }).filter(Objects::nonNull)
+                        .toList(), List.of()
+        );
 
-            byte[] walEntry = baos.toByteArray();
+        for (byte[] walEntry : entries) {
             walQueue.add(walEntry);
             applyBinaryOperation(walEntry);
         }
-        deltaBuffer.clear();
     }
+
 
     /**
      * Applies a binary WAL entry to the in-memory database map.
@@ -488,7 +546,7 @@ public class EnderDBManager {
      */
     private static void loadDatabase() throws IOException {
         if (!dbFile.exists()) {
-            System.out.println("[EnderDB] No database file found.");
+            LOGGER.info("No database file found.");
             return;
         }
         long fileLength = dbFile.length();
@@ -547,25 +605,27 @@ public class EnderDBManager {
      * @param args   Format arguments.
      */
     private static void log(String format, Object... args) {
-        if (DEBUG_LOG) System.out.printf("[EnderDB] " + format + "%n", args);
+        if (DEBUG_LOG) {
+            LOGGER.debug("[EnderDiskInventory] " + format, args);
+        }
     }
 
     /**
      * Migrates any legacy records with malformed or missing scope names to the "global" scope.
      */
     private static void migrateOldRecords() {
-        List<Map.Entry<AEKey, StoredEntry>> toMigrate = new ArrayList<>();
-        for (Map.Entry<AEKey, StoredEntry> entry : dbMap.entrySet()) {
-            AEKey key = entry.getKey();
-            String scope = key.scope();
-            if (scope == null || scope.isEmpty() || scope.length() > 0 && !scope.matches("^[a-z]+_[a-z0-9\\-]+$") && !scope.equals("global")) {
-                toMigrate.add(entry);
-            }
-        }
+        List<Map.Entry<AEKey, StoredEntry>> toMigrate = parallelCall(() ->
+                dbMap.entrySet().parallelStream()
+                        .filter(entry -> {
+                            String scope = entry.getKey().scope();
+                            return scope == null || scope.isEmpty() || (!scope.matches("^[a-z]+_[a-z0-9\\-]+$") && !scope.equals("global"));
+                        })
+                        .toList(), List.of()
+        );
 
         if (toMigrate.isEmpty()) return;
 
-        System.out.println("[EnderDB] Detected " + toMigrate.size() + " old-format records. Migrating to global scope...");
+        LOGGER.info("Detected {} old-format records. Migrating to global scope...", toMigrate.size());
 
         for (Map.Entry<AEKey, StoredEntry> entry : toMigrate) {
             AEKey oldKey = entry.getKey();
@@ -575,8 +635,23 @@ public class EnderDBManager {
             dbMap.put(newKey, new StoredEntry(existing + value.count(), null));
             dbMap.remove(oldKey);
         }
-        System.out.println("[EnderDB] Migration complete. Migrated " + toMigrate.size() + " entries.");
+
         dirty = true;
+    }
+
+
+    private static <T> T parallelCall(Callable<T> task, T fallback) {
+        try {
+            return SHARED_PARALLEL_POOL.submit(task).get();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return fallback;
+        }
+    }
+
+    public static boolean isKnownItem(String scopePrefix, int frequency, byte[] keyBytes) {
+        AEKey key = new AEKey(scopePrefix, frequency, keyBytes);
+        return dbMap.containsKey(key) || deltaBuffer.containsKey(key);
     }
 
 }

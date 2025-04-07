@@ -1,5 +1,6 @@
 package com.sts15.enderdrives.commands;
 
+import appeng.api.stacks.AEItemKey;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -19,17 +20,19 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Level;
-
 import java.io.File;
 import java.util.*;
 
 public class ModCommands {
 
+    private static final Map<UUID, Integer> pendingBenchmarkRequests = new HashMap<>();
+    private static final Map<UUID, String> pendingClearRequests = new HashMap<>();
+
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
                 Commands.literal("enderdrives")
                         .then(Commands.literal("setfreq")
-                                .then(Commands.argument("frequency", IntegerArgumentType.integer(1))
+                                .then(Commands.argument("frequency", IntegerArgumentType.integer(0, 4095))
                                         .executes(ctx -> {
                                             int freq = IntegerArgumentType.getInteger(ctx, "frequency");
                                             CommandSourceStack source = ctx.getSource();
@@ -49,41 +52,56 @@ public class ModCommands {
                                         .suggests((ctx, builder) -> {
                                             builder.suggest("private");
                                             builder.suggest("team");
-                                            builder.suggest("general");
+                                            builder.suggest("global");
                                             return builder.buildFuture();
                                         })
-                                        .then(Commands.argument("frequency", IntegerArgumentType.integer(1))
+                                        .then(Commands.argument("frequency", IntegerArgumentType.integer(0, 4095))
                                                 .executes(ctx -> {
-                                                    String type = StringArgumentType.getString(ctx, "type");
-                                                    int frequency = IntegerArgumentType.getInteger(ctx, "frequency");
                                                     CommandSourceStack source = ctx.getSource();
                                                     ServerPlayer player = source.getPlayerOrException();
+                                                    UUID playerId = player.getUUID();
+                                                    String type = StringArgumentType.getString(ctx, "type").toLowerCase();
+                                                    int frequency = IntegerArgumentType.getInteger(ctx, "frequency");
 
                                                     String scopePrefix;
-                                                    switch (type.toLowerCase()) {
+                                                    switch (type) {
                                                         case "private":
-                                                            scopePrefix = "player_" + player.getUUID();
+                                                            scopePrefix = "player_" + playerId;
                                                             break;
                                                         case "team":
-                                                            scopePrefix = "team_" + player.getUUID();
+                                                            scopePrefix = "team_" + playerId;
                                                             break;
-                                                        case "general":
+                                                        case "global":
                                                             if (!source.hasPermission(4)) {
-                                                                source.sendFailure(Component.literal("You must be a server operator (level 4) to clear general channels."));
+                                                                source.sendFailure(Component.literal("§cYou must be a server operator to clear general channels."));
                                                                 return 0;
                                                             }
                                                             scopePrefix = "global";
                                                             break;
                                                         default:
-                                                            source.sendFailure(Component.literal("Invalid channel type. Use 'private', 'team', or 'general'."));
+                                                            source.sendFailure(Component.literal("§cInvalid channel type. Use 'private', 'team', or 'global'."));
                                                             return 0;
                                                     }
 
+                                                    // Confirmation check
+                                                    String key = playerId.toString() + ":" + type + ":" + frequency;
+                                                    if (!pendingClearRequests.containsKey(playerId) || !pendingClearRequests.get(playerId).equals(key)) {
+                                                        pendingClearRequests.put(playerId, key);
+                                                        source.sendSuccess(() -> Component.literal(
+                                                                "§c⚠ This will permanently delete all items stored in frequency §e" + frequency +
+                                                                        "§c under the §6" + type + "§c scope.\n§7If you are sure, run the same command again to confirm."
+                                                        ), false);
+                                                        return 1;
+                                                    }
+
+                                                    // Confirmed: perform deletion
+                                                    pendingClearRequests.remove(playerId);
                                                     EnderDBManager.clearFrequency(scopePrefix, frequency);
                                                     EnderDBManager.commitDatabase();
 
                                                     source.sendSuccess(() -> Component.literal(
-                                                            "Cleared frequency " + frequency + " for " + type + " channel."), true);
+                                                            "§a✔ Cleared frequency §b" + frequency + "§a for scope §6" + type
+                                                    ), true);
                                                     return 1;
                                                 })
                                         )
@@ -105,124 +123,171 @@ public class ModCommands {
                                 })
                         )
                         .then(Commands.literal("autobenchmark")
-                                .executes(ctx -> {
-                                    Thread t = new Thread(() -> {
-                                        try {
-                                        CommandSourceStack source = ctx.getSource();
-                                        ServerPlayer player = source.getPlayerOrException();
-                                        MinecraftServer server = player.getServer();
-                                        String scopePrefix = "player_" + player.getUUID();
-                                        int frequency = 1;
-                                        int currentSize = 10_000;
-                                        int step = 25_000;
-                                        int maxSize = 2_000_000;
-                                        double minSafeTPS = 18.0;
-                                        boolean continueTesting = true;
-                                        int bestSize = 0;
-                                        while (continueTesting && currentSize <= maxSize) {
-                                            EnderDBManager.clearFrequency(scopePrefix, frequency);
-                                            long insertStart = System.currentTimeMillis();
-                                            for (int i = 1; i <= currentSize; i++) {
-                                                ItemStack paper = new ItemStack(Items.PAPER);
-                                                int finalI = i;
-                                                paper.update(DataComponents.CUSTOM_DATA, CustomData.EMPTY, oldData -> {
-                                                    CompoundTag tag = oldData.copyTag();
-                                                    CompoundTag display = new CompoundTag();
-                                                    display.putString("Name", "{\"text\":\"" + finalI + "\"}");
-                                                    tag.put("display", display);
-                                                    return CustomData.of(tag);
-                                                });
-                                                byte[] serialized = EnderDiskInventory.serializeItemStackToBytes(paper);
-                                                EnderDBManager.saveItem(scopePrefix, frequency, serialized, 1);
-                                            }
-                                            long insertEnd = System.currentTimeMillis();
-                                            try {
-                                                Thread.sleep(10000);
-                                            } catch (InterruptedException ignored) {
-                                            }
-                                            long queryStart = System.currentTimeMillis();
-                                            int typeCount = EnderDBManager.getTypeCount(scopePrefix, frequency);
-                                            long queryEnd = System.currentTimeMillis();
-                                            long[] tickTimes = server.getTickTime(Level.OVERWORLD);
-                                            double avgTick = Arrays.stream(tickTimes).average().orElse(0) / 1_000_000.0;
-                                            double tps = Math.min(1000.0 / avgTick, 20.0);
-                                            long memoryUsed = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / (1024 * 1024);
-                                            EnderDBManager.clearFrequency(scopePrefix, frequency);
-                                            double insertTime = insertEnd - insertStart;
-                                            double queryTime = queryEnd - queryStart;
-                                            int finalCurrentSize = currentSize;
-                                            source.sendSuccess(() -> Component.literal(
-                                                    "§b[AutoBenchmark]\n" +
-                                                            "§7Size Tested: §a" + finalCurrentSize + "\n" +
-                                                            "§7Insert Time: §e" + insertTime + "ms\n" +
-                                                            "§7Query Time: §e" + queryTime + "ms\n" +
-                                                            "§7Types Returned: §a" + typeCount + "\n" +
-                                                            "§7Used RAM: §b" + memoryUsed + " MB\n" +
-                                                            "§7TPS: §a" + String.format("%.2f", tps) +
-                                                            " §7| Tick: §a" + String.format("%.2f", avgTick) + "ms"
-                                            ), false);
-                                            if (tps >= minSafeTPS) {
-                                                bestSize = currentSize;
-                                                currentSize += step;
-                                            } else {
-                                                continueTesting = false;
-                                                source.sendSuccess(() -> Component.literal(
-                                                        "§c⚠ TPS dropped below " + minSafeTPS + "! Benchmark stopped."
-                                                ), false);
-                                            }
-                                        }
+                                .then(Commands.argument("frequency", IntegerArgumentType.integer(0, 4095))
+                                        .executes(ctx -> {
+                                            CommandSourceStack source = ctx.getSource();
+                                            ServerPlayer player = source.getPlayerOrException();
+                                            UUID playerId = player.getUUID();
+                                            int frequency = IntegerArgumentType.getInteger(ctx, "frequency");
 
-                                        int finalBestSize = bestSize;
-                                        source.sendSuccess(() -> Component.literal(
-                                                "§a✅ Best stable record count: §b" + finalBestSize + " entries without TPS drop."
-                                        ), false);
-                                        EnderDBManager.commitDatabase();
-                                        } catch (RuntimeException | CommandSyntaxException ignored) {}
-                                    }, "EnderDB-autobenchmark");
-                                    t.setDaemon(true);
-                                    t.start();
-                                    return 1;
-                                })
+                                            if (!pendingBenchmarkRequests.containsKey(playerId)) {
+                                                pendingBenchmarkRequests.put(playerId, frequency);
+                                                source.sendSuccess(() -> Component.literal(
+                                                        "§b[EnderDrives Autobenchmark]\n" +
+                                                                "§7This command will insert items until §f2,000,000 §7types are added to the database.\n" +
+                                                                "§7It will automatically stop if server TPS drops below §c18§7.\n\n" +
+                                                                "§fOnce the test starts, open an AE2 terminal with an EnderDrive installed at frequency §a" + frequency + "§f and scope §aPrivate§f.\n\n" +
+                                                                "§eRe-run §6/enderdrives autobenchmark " + frequency + " §eto confirm and begin the test."
+                                                ), false);
+                                                return 1;
+                                            }
+
+                                            int confirmedFrequency = pendingBenchmarkRequests.get(playerId);
+                                            if (confirmedFrequency != frequency) {
+                                                source.sendFailure(Component.literal("Frequency mismatch. Use the same frequency you confirmed."));
+                                                return 0;
+                                            }
+
+                                            MinecraftServer server = player.getServer();
+                                            String scopePrefix = "player_" + player.getUUID();
+
+                                            int typeCount_check = EnderDBManager.getTypeCount(scopePrefix, frequency);
+                                            if (typeCount_check > 0) {
+                                                source.sendFailure(Component.literal("Frequency " + frequency + " is not empty. Autobenchmark requires a completely empty frequency."));
+                                                pendingBenchmarkRequests.remove(playerId);
+                                                return 0;
+                                            }
+
+                                            pendingBenchmarkRequests.remove(playerId);
+
+                                            Thread t = new Thread(() -> {
+                                                try {
+
+                                                    final int step = 5000;
+                                                    final int maxSize = 2_000_000;
+                                                    final double minSafeTPS = 18.0;
+                                                    int bestSize = 0;
+                                                    byte[] serialized;
+                                                    int currentSize = 10000;
+                                                    boolean continueTesting = true;
+
+                                                    while (continueTesting && currentSize <= maxSize) {
+                                                        EnderDBManager.clearFrequency(scopePrefix, frequency);
+
+                                                        long insertStart = System.currentTimeMillis();
+                                                        for (int i = 1; i <= currentSize; i++) {
+                                                            ItemStack paper = new ItemStack(Items.PAPER);
+                                                            paper.set(DataComponents.CUSTOM_NAME, Component.literal(String.valueOf(i)));
+
+                                                            AEItemKey key = AEItemKey.of(paper);
+                                                            serialized = EnderDiskInventory.serializeItemStackToBytes(key.toStack(1));
+                                                            EnderDBManager.saveItem(scopePrefix, frequency, serialized, 1);
+                                                        }
+                                                        long insertEnd = System.currentTimeMillis();
+                                                        EnderDBManager.flushDeltaBuffer();
+                                                        Thread.sleep(10000);
+
+                                                        long[] tickTimes = server.getTickTime(Level.OVERWORLD);
+                                                        double avgTick = Arrays.stream(tickTimes).average().orElse(0) / 1_000_000.0;
+                                                        double tps = Math.min(1000.0 / avgTick, 20.0);
+
+                                                        long queryStart = System.currentTimeMillis();
+                                                        int typeCount = EnderDBManager.getTypeCount(scopePrefix, frequency);
+                                                        long queryEnd = System.currentTimeMillis();
+
+                                                        long usedMem = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()) / (1024 * 1024);
+
+                                                        double insertTime = insertEnd - insertStart;
+                                                        double queryTime = queryEnd - queryStart;
+
+                                                        int finalCurrentSize = currentSize;
+                                                        source.sendSuccess(() -> Component.literal(
+                                                                "§b[AutoBenchmark]\n" +
+                                                                        "§7Tested Size: §a" + finalCurrentSize + " types\n" +
+                                                                        "§7Insert: §e" + insertTime + "ms\n" +
+                                                                        "§7Query: §e" + queryTime + "ms\n" +
+                                                                        "§7Types: §a" + typeCount + "\n" +
+                                                                        "§7Memory: §b" + usedMem + "MB\n" +
+                                                                        "§7TPS: §a" + String.format("%.2f", tps) +
+                                                                        " §7| Tick: §a" + String.format("%.2f", avgTick) + "ms"
+                                                        ), false);
+
+                                                        if (tps >= minSafeTPS) {
+                                                            bestSize = currentSize;
+                                                            currentSize += step;
+                                                        } else {
+                                                            source.sendSuccess(() -> Component.literal("§c⚠ TPS dropped below " + minSafeTPS + ". Stopping."), false);
+                                                            break;
+                                                        }
+                                                    }
+
+                                                    int finalBestSize = bestSize;
+                                                    source.sendSuccess(() -> Component.literal(
+                                                            "§a✅ Best stable entry count: §b" + finalBestSize + " types"
+                                                    ), false);
+
+                                                    EnderDBManager.clearFrequency(scopePrefix, frequency);
+                                                    EnderDBManager.commitDatabase();
+
+                                                } catch (Exception ex) {
+                                                    ex.printStackTrace();
+                                                }
+                                            }, "EnderDB-autobenchmark");
+
+                                            t.setDaemon(true);
+                                            t.start();
+                                            return 1;
+                                        })
+                                )
                         )
+
+
                         .then(Commands.literal("stress")
-                                .then(Commands.argument("frequency", IntegerArgumentType.integer(1))
-                                        .then(Commands.argument("amount", IntegerArgumentType.integer(1))
+                                .then(Commands.argument("frequency", IntegerArgumentType.integer(0, 4095))
+                                        .then(Commands.argument("amount", IntegerArgumentType.integer(1,2000000))
                                                 .executes(ctx -> {
                                                     int frequency = IntegerArgumentType.getInteger(ctx, "frequency");
                                                     int amount = IntegerArgumentType.getInteger(ctx, "amount");
                                                     CommandSourceStack source = ctx.getSource();
                                                     ServerPlayer player = source.getPlayerOrException();
                                                     String scopePrefix = "player_" + player.getUUID().toString();
+
+                                                    Set<Integer> seenHashes = new HashSet<>();
+                                                    int duplicates = 0;
+
                                                     long insertStart = System.currentTimeMillis();
                                                     for (int i = 1; i <= amount; i++) {
-                                                        final int count = i;
-                                                        ItemStack paper = new ItemStack(net.minecraft.world.item.Items.PAPER);
-                                                        paper.update(net.minecraft.core.component.DataComponents.CUSTOM_DATA, net.minecraft.world.item.component.CustomData.EMPTY, oldData -> {
-                                                            CompoundTag tag = oldData.copyTag();
-                                                            CompoundTag display = new CompoundTag();
-                                                            display.putString("Name", "{\"text\":\"" + count + "\"}");
-                                                            tag.put("display", display);
-                                                            return net.minecraft.world.item.component.CustomData.of(tag);
-                                                        });
-                                                        byte[] serialized = EnderDiskInventory.serializeItemStackToBytes(paper);
+                                                        ItemStack paper = new ItemStack(Items.PAPER, 1);
+                                                        paper.set(DataComponents.CUSTOM_NAME, Component.literal(String.valueOf(i)));
+
+                                                        AEItemKey key = AEItemKey.of(paper);
+                                                        byte[] serialized = EnderDiskInventory.serializeItemStackToBytes(key.toStack(1));
+
+                                                        int hash = Arrays.hashCode(serialized);
+                                                        if (!seenHashes.add(hash)) {
+                                                            int finalI = i;
+                                                            source.sendSuccess(() -> Component.literal("Duplicate detected for: " + finalI), false);
+                                                            duplicates++;
+                                                        }
+
                                                         EnderDBManager.saveItem(scopePrefix, frequency, serialized, 1);
                                                     }
                                                     long insertEnd = System.currentTimeMillis();
-                                                    long insertTime = insertEnd - insertStart;
 
-                                                    long queryStart = System.currentTimeMillis();
-                                                    int typeCount = EnderDBManager.getTypeCount(scopePrefix,frequency);
-                                                    long queryEnd = System.currentTimeMillis();
-                                                    long queryTime = queryEnd - queryStart;
+                                                    int typeCount = EnderDBManager.getTypeCount(scopePrefix, frequency);
+                                                    long insertTime = insertEnd - insertStart;
+                                                    int finalDuplicates = duplicates;
 
                                                     source.sendSuccess(() -> Component.literal("Stress test complete on your private channel:"), false);
-                                                    source.sendSuccess(() -> Component.literal("Inserted " + amount + " items at frequency " + frequency + " in " + insertTime + " ms."), false);
-                                                    source.sendSuccess(() -> Component.literal("Query returned " + typeCount + " unique types in " + queryTime + " ms."), false);
+                                                    source.sendSuccess(() -> Component.literal("Inserted " + amount + " items in " + insertTime + " ms."), false);
+                                                    source.sendSuccess(() -> Component.literal("Unique types: " + typeCount), false);
+                                                    source.sendSuccess(() -> Component.literal("Duplicates: " + finalDuplicates), false);
+
                                                     return 1;
                                                 })
-                                        )
-                                )
+                                        ))
                         )
+
         );
     }
 }
