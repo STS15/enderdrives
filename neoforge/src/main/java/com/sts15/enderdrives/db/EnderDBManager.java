@@ -6,7 +6,6 @@ import net.minecraft.world.level.storage.LevelResource;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
@@ -36,7 +35,6 @@ public class EnderDBManager {
     private static final long MIN_DB_COMMIT_INTERVAL_MS = 5000;
     private static final long MAX_DB_COMMIT_INTERVAL_MS = 60000;
     private static final boolean DEBUG_LOG = false;
-
     private static final ForkJoinPool SHARED_PARALLEL_POOL =
             new ForkJoinPool(Math.min(4, Runtime.getRuntime().availableProcessors()));
 
@@ -59,7 +57,7 @@ public class EnderDBManager {
             loadDatabase();
             startBackgroundCommit();
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                System.out.println("[EnderDB] Shutdown hook triggered.");
+                LOGGER.info("Shutdown hook triggered.");
                 shutdown();
             }));
         } catch (IOException e) {
@@ -548,7 +546,7 @@ public class EnderDBManager {
      */
     private static void loadDatabase() throws IOException {
         if (!dbFile.exists()) {
-            System.out.println("[EnderDB] No database file found.");
+            LOGGER.info("No database file found.");
             return;
         }
         long fileLength = dbFile.length();
@@ -627,7 +625,7 @@ public class EnderDBManager {
 
         if (toMigrate.isEmpty()) return;
 
-        System.out.println("[EnderDB] Detected " + toMigrate.size() + " old-format records. Migrating to global scope...");
+        LOGGER.info("Detected {} old-format records. Migrating to global scope...", toMigrate.size());
 
         for (Map.Entry<AEKey, StoredEntry> entry : toMigrate) {
             AEKey oldKey = entry.getKey();
