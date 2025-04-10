@@ -5,6 +5,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.sts15.enderdrives.config.serverConfig;
 import com.sts15.enderdrives.db.AEKeyCacheEntry;
 import com.sts15.enderdrives.db.EnderDBManager;
 import com.sts15.enderdrives.inventory.EnderDiskInventory;
@@ -36,6 +37,8 @@ public class ModCommands {
                                         .executes(ctx -> {
                                             int freq = IntegerArgumentType.getInteger(ctx, "frequency");
                                             CommandSourceStack source = ctx.getSource();
+                                            if (!validateFrequency(freq, source)) return 0;
+
                                             ItemStack heldItem = source.getPlayerOrException().getMainHandItem();
                                             if (heldItem.getItem() instanceof EnderDiskItem) {
                                                 EnderDiskItem.setFrequency(heldItem, freq);
@@ -59,33 +62,31 @@ public class ModCommands {
                                                 .executes(ctx -> {
                                                     CommandSourceStack source = ctx.getSource();
                                                     ServerPlayer player = source.getPlayerOrException();
-                                                    UUID playerId = player.getUUID();
-                                                    String type = StringArgumentType.getString(ctx, "type").toLowerCase();
                                                     int frequency = IntegerArgumentType.getInteger(ctx, "frequency");
+                                                    if (!validateFrequency(frequency, source)) return 0;
+
+                                                    String type = StringArgumentType.getString(ctx, "type").toLowerCase();
+                                                    UUID playerId = player.getUUID();
 
                                                     String scopePrefix;
                                                     switch (type) {
-                                                        case "private":
-                                                            scopePrefix = "player_" + playerId;
-                                                            break;
-                                                        case "team":
-                                                            scopePrefix = "team_" + playerId;
-                                                            break;
-                                                        case "global":
+                                                        case "private" -> scopePrefix = "player_" + playerId;
+                                                        case "team" -> scopePrefix = "team_" + playerId;
+                                                        case "global" -> {
                                                             if (!source.hasPermission(4)) {
                                                                 source.sendFailure(Component.literal("§cYou must be a server operator to clear general channels."));
                                                                 return 0;
                                                             }
                                                             scopePrefix = "global";
-                                                            break;
-                                                        default:
+                                                        }
+                                                        default -> {
                                                             source.sendFailure(Component.literal("§cInvalid channel type. Use 'private', 'team', or 'global'."));
                                                             return 0;
+                                                        }
                                                     }
 
-                                                    // Confirmation check
-                                                    String key = playerId.toString() + ":" + type + ":" + frequency;
-                                                    if (!pendingClearRequests.containsKey(playerId) || !pendingClearRequests.get(playerId).equals(key)) {
+                                                    String key = playerId + ":" + type + ":" + frequency;
+                                                    if (!key.equals(pendingClearRequests.get(playerId))) {
                                                         pendingClearRequests.put(playerId, key);
                                                         source.sendSuccess(() -> Component.literal(
                                                                 "§c⚠ This will permanently delete all items stored in frequency §e" + frequency +
@@ -94,7 +95,6 @@ public class ModCommands {
                                                         return 1;
                                                     }
 
-                                                    // Confirmed: perform deletion
                                                     pendingClearRequests.remove(playerId);
                                                     EnderDBManager.clearFrequency(scopePrefix, frequency);
                                                     EnderDBManager.commitDatabase();
@@ -125,10 +125,11 @@ public class ModCommands {
                         .then(Commands.literal("autobenchmark")
                                 .then(Commands.argument("frequency", IntegerArgumentType.integer(0, 4095))
                                         .executes(ctx -> {
+                                            int frequency = IntegerArgumentType.getInteger(ctx, "frequency");
                                             CommandSourceStack source = ctx.getSource();
+                                            if (!validateFrequency(frequency, source)) return 0;
                                             ServerPlayer player = source.getPlayerOrException();
                                             UUID playerId = player.getUUID();
-                                            int frequency = IntegerArgumentType.getInteger(ctx, "frequency");
 
                                             if (!pendingBenchmarkRequests.containsKey(playerId)) {
                                                 pendingBenchmarkRequests.put(playerId, frequency);
@@ -163,12 +164,12 @@ public class ModCommands {
                                             Thread t = new Thread(() -> {
                                                 try {
 
-                                                    final int step = 5000;
-                                                    final int maxSize = 2_000_000;
-                                                    final double minSafeTPS = 18.0;
+                                                    final int step = serverConfig.AUTO_BENCHMARK_STEP.get();
+                                                    final int maxSize = serverConfig.AUTO_BENCHMARK_MAX_TYPES.get();
+                                                    final double minSafeTPS = serverConfig.AUTO_BENCHMARK_MIN_TPS.get();
                                                     int bestSize = 0;
                                                     byte[] serialized;
-                                                    int currentSize = 10000;
+                                                    int currentSize = serverConfig.AUTO_BENCHMARK_INITIAL_SIZE.get();
                                                     boolean continueTesting = true;
 
                                                     while (continueTesting && currentSize <= maxSize) {
@@ -185,7 +186,7 @@ public class ModCommands {
                                                         }
                                                         long insertEnd = System.currentTimeMillis();
                                                         EnderDBManager.flushDeltaBuffer();
-                                                        Thread.sleep(10000);
+                                                        Thread.sleep(serverConfig.AUTO_BENCHMARK_MS_SLEEP.get());
 
                                                         long[] tickTimes = server.getTickTime(Level.OVERWORLD);
                                                         double avgTick = Arrays.stream(tickTimes).average().orElse(0) / 1_000_000.0;
@@ -241,12 +242,12 @@ public class ModCommands {
                                 )
                         )
 
-
                         .then(Commands.literal("stress")
                                 .then(Commands.argument("frequency", IntegerArgumentType.integer(0, 4095))
                                         .then(Commands.argument("amount", IntegerArgumentType.integer(1,2000000))
                                                 .executes(ctx -> {
                                                     int frequency = IntegerArgumentType.getInteger(ctx, "frequency");
+                                                    if (!validateFrequency(frequency, ctx.getSource())) return 0;
                                                     int amount = IntegerArgumentType.getInteger(ctx, "amount");
                                                     CommandSourceStack source = ctx.getSource();
                                                     ServerPlayer player = source.getPlayerOrException();
@@ -290,4 +291,15 @@ public class ModCommands {
 
         );
     }
+
+    private static boolean validateFrequency(int freq, CommandSourceStack source) {
+        int min = serverConfig.FREQ_MIN.get();
+        int max = serverConfig.FREQ_MAX.get();
+        if (freq < min || freq > max) {
+            source.sendFailure(Component.literal("§cFrequency must be between §e" + min + "§c and §e" + max + "§c."));
+            return false;
+        }
+        return true;
+    }
+
 }
