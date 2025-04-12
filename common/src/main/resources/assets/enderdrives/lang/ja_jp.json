@@ -11,6 +11,7 @@
   "item.enderdrives.ender_disk_64k": "64k エンダーアイテムストレージセル",
   "item.enderdrives.ender_disk_256k": "256k エンダーアイテムストレージセル",
   "item.enderdrives.ender_disk_creative": "クリエイティブエンダーアイテムストレージセル",
+  "item.enderdrives.tape_disk": "テープディスクアイテムストレージセル",
   "enderdrives.transfer_mode.bidirectional": "双方向",
   "enderdrives.transfer_mode.input": "入力のみ",
   "enderdrives.transfer_mode.output": "出力のみ",
