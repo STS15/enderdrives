@@ -44,7 +44,7 @@ import static com.sts15.enderdrives.Constants.MOD_ID;
 @Mod(MOD_ID)
 public class EnderDrives {
 
-    private static boolean isDatabaseInitialized = false;
+    private static boolean isDatabaseActive = false;
 
     public EnderDrives(IEventBus modEventBus, ModContainer modContainer) {
         serverConfig.register(modContainer);
@@ -74,12 +74,22 @@ public class EnderDrives {
     @SubscribeEvent
     public void onWorldLoad(LevelEvent.Load event) {
         if (!event.getLevel().isClientSide() && event.getLevel() instanceof ServerLevel) {
-            if (!isDatabaseInitialized) {
-                EnderDBManager.init();
-                TapeDBManager.init();
-                isDatabaseInitialized = true;
-                System.out.println("[EnderDrives] Database initialized.");
+            if (isDatabaseActive) {
+                EnderDBManager.shutdown();
+                TapeDBManager.shutdown();
             }
+            EnderDBManager.init();
+            TapeDBManager.init();
+            isDatabaseActive = true;
+        }
+    }
+
+    @SubscribeEvent
+    public void onWorldUnload(LevelEvent.Unload event) {
+        if (!event.getLevel().isClientSide() && isDatabaseActive) {
+            EnderDBManager.shutdown();
+            TapeDBManager.shutdown();
+            isDatabaseActive = false;
         }
     }
 

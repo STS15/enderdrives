@@ -101,19 +101,24 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
 
             NetworkHandler.sendToServer(id);
         } else {
-            // Show ??/?? if ID is missing
-            Component unknown = Component.literal("??").withStyle(s -> s.withColor(0x777777));
+            // Use configured values instead of "??"
+            int typeLimit = getTypeLimit(stack);
+            long byteLimit = serverConfig.TAPE_DISK_BYTE_LIMIT.get();
+
+            int typeColor = 0x55FF55;
+            int byteColor = 0x55FF55;
 
             lines.add(Component.translatable("tooltip.enderdrives.tape.bytes",
-                    Component.literal("0").withStyle(s -> s.withColor(0x866dfc)),
-                    unknown
+                    Component.literal("0").withStyle(s -> s.withColor(byteColor)),
+                    Component.literal(String.valueOf(byteLimit)).withStyle(s -> s.withColor(limitColor))
             ).withStyle(s -> s.withColor(labelColor)));
 
             lines.add(Component.translatable("tooltip.enderdrives.tape.types",
-                    Component.literal("0").withStyle(s -> s.withColor(0x866dfc)),
-                    unknown
+                    Component.literal("0").withStyle(s -> s.withColor(typeColor)),
+                    Component.literal(String.valueOf(typeLimit)).withStyle(s -> s.withColor(limitColor))
             ).withStyle(s -> s.withColor(labelColor)));
         }
+
     }
 
 

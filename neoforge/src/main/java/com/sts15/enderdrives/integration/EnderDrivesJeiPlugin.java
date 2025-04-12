@@ -24,8 +24,7 @@ public class EnderDrivesJeiPlugin implements IModPlugin {
         registration.addIngredientInfo(
                 stack,
                 VanillaTypes.ITEM_STACK,
-                Component.literal("This drive only accepts items that are armor, tools, weapons, single stack items, or have non standard NBT.  Save the type space on you larger drives for what really matters.")
+                Component.literal("This drive only accepts items that are armor, tools, weapons, single stack items, or have non standard NBT.  Save the type space on your larger drives for what really matters.")
         );
     }
 }
-

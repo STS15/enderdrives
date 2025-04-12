@@ -10,7 +10,7 @@ item_ids:
 
 Tape Drives are powerful AE2-compatible storage cells designed to handle **NBT-heavy items**, such as tools, armor, enchanted gear, or any uniquely tagged items that normally fill type space with traditional ME drives.
 
-Unlike typical AE2 drives, Tape Disks bytes used scale dynamically based on the actual **NBT size** of items stored — giving you fine-grained control over your system.
+Unlike typical AE2 drives, Tape Disks bytes used scale dynamically based on the actual **NBT size** of items stored — giving you fine-grained control over your system.  Tape Drives will tell AE2 that it is preferred for any item that would match its filter.  This can be overridden by having it in a lower priority ME Drive.
 
 <Row gap="10">
   <Column>

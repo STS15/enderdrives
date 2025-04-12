@@ -38,6 +38,7 @@ public class EnderDBManager {
     static long minDbCommit = serverConfig.END_DB_MIN_DB_COMMIT_INTERVAL_MS.get();
     static long maxDbCommit = serverConfig.END_DB_MAX_DB_COMMIT_INTERVAL_MS.get();
     static boolean debugLog = serverConfig.END_DB_DEBUG_LOG.get();
+    private static volatile boolean isShutdown = false;
 
 // ==== Public API ====
 
@@ -70,6 +71,8 @@ public class EnderDBManager {
      * Shuts down the EnderDB system gracefully by flushing buffers, committing data, and closing WAL streams.
      */
     public static void shutdown() {
+        if (isShutdown) return;
+        isShutdown = true;
         running = false;
         try {
             synchronized (commitLock) {
@@ -78,8 +81,23 @@ public class EnderDBManager {
                 truncateCurrentWAL();
                 closeWALStream();
             }
-        } catch (IOException ignored) {}
+        } catch (IOException e) {
+            LOGGER.error("Exception during EnderDBManager shutdown: ", e);
+        }
+        dbMap.clear();
+        deltaBuffer.clear();
+        itemCountCache.clear();
+        walQueue.clear();
+        totalItemsWritten.set(0);
+        totalCommits.set(0);
+        isShutdown = false;
+        running = true;
+        dirty = false;
+        lastCommitTime = System.currentTimeMillis();
+        lastDbCommitTime = System.currentTimeMillis();
+        LOGGER.info("[EnderDBManager] Shutdown complete and ready for re-init.");
     }
+
 
     /**
      * Saves an item delta into the database, merging counts by item key.

@@ -1,9 +1,12 @@
 package com.sts15.enderdrives.db;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.util.Arrays;
-import java.util.Objects;
 
-public record TapeKey(byte[] itemBytes) implements Comparable<TapeKey> {
+public record TapeKey(byte[] itemBytes) implements Comparable<TapeKey>, Serializable {
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     @Override
     public boolean equals(Object o) {

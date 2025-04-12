@@ -187,11 +187,11 @@ public class serverConfig {
         SERVER_BUILDER.comment(CATEGORY_DESC_TAPEDISK).push(CATEGORY_TAPEDISK);
 
         TAPE_DISK_TYPE_LIMIT = SERVER_BUILDER
-                .comment("Maximum number of item types allowed in a tape disk (default: 100)")
+                .comment("Maximum number of item types allowed in a tape disk (default: 255)")
                 .defineInRange("tape_disk_type_limit", 255, 1, 1024000);
 
         TAPE_DISK_BYTE_LIMIT = SERVER_BUILDER
-                .comment("Maximum number of item bytes allowed in a tape disk (default: 5MiB)")
+                .comment("Maximum number of item bytes allowed in a tape disk (default: 292144 bytes)")
                 .defineInRange("tape_disk_max_bytes", 292144, 1024, 256 * 1024 * 1024);
 
         TAPE_DB_FLUSH_THRESHOLD = SERVER_BUILDER

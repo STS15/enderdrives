@@ -1,19 +1,14 @@
+// Updated TapeDiskInventory to support lazy-loading DB logic
 package com.sts15.enderdrives.inventory;
 
 import appeng.api.config.Actionable;
 import appeng.api.networking.security.IActionSource;
-import appeng.api.stacks.AEItemKey;
+import appeng.api.stacks.*;
 import appeng.api.stacks.AEKey;
-import appeng.api.stacks.AEKeyType;
-import appeng.api.stacks.KeyCounter;
-import appeng.api.storage.cells.CellState;
-import appeng.api.storage.cells.ICellHandler;
-import appeng.api.storage.cells.StorageCell;
+import appeng.api.storage.cells.*;
 import appeng.items.contents.CellConfig;
 import appeng.util.ConfigInventory;
-import com.sts15.enderdrives.db.StoredEntry;
-import com.sts15.enderdrives.db.TapeDBManager;
-import com.sts15.enderdrives.db.TapeKey;
+import com.sts15.enderdrives.db.*;
 import com.sts15.enderdrives.items.TapeDiskItem;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -27,7 +22,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-import static com.sts15.enderdrives.db.TapeDBManager.getByteLimit;
+import static com.sts15.enderdrives.db.TapeDBManager.*;
 
 public class TapeDiskInventory implements StorageCell {
 
@@ -40,92 +35,80 @@ public class TapeDiskInventory implements StorageCell {
     private final int typeLimit;
 
     public TapeDiskInventory(ItemStack stack) {
-        long start = System.currentTimeMillis();
-        if (!(stack.getItem() instanceof TapeDiskItem item))
-            throw new IllegalArgumentException("Not a TapeDisk.");
+        if (!(stack.getItem() instanceof TapeDiskItem item)) throw new IllegalArgumentException("Not a TapeDisk.");
         this.stack = stack;
         this.tapeId = TapeDiskItem.getOrCreateTapeId(stack);
         this.typeLimit = item.getTypeLimit(stack);
         this.disabled = item.isDisabled(stack);
-        log("TapeDiskInventory created for tape %s in %d ms", tapeId, System.currentTimeMillis() - start);
     }
 
     @Override
     public CellState getStatus() {
-        long start = System.currentTimeMillis();
-        int types = TapeDBManager.getTypeCount(tapeId);
-        CellState state = types == 0 ? CellState.EMPTY
+        TapeDriveCache cache = getCacheSafe(tapeId);
+        if (cache == null) return CellState.EMPTY;
+        int types = cache.entries.size();
+        return types == 0 ? CellState.EMPTY
                 : types >= typeLimit ? CellState.FULL
                 : types >= (typeLimit * 0.75f) ? CellState.TYPES_FULL : CellState.NOT_EMPTY;
-        log("getStatus for tape %s returned %s in %d ms", tapeId, state, System.currentTimeMillis() - start);
-        return state;
     }
 
     @Override
     public double getIdleDrain() {
         if (disabled) return 0;
-        long start = System.currentTimeMillis();
-        long totalItems = Math.max(1, TapeDBManager.getTypeCount(tapeId));
-        double drain = 5.0 + Math.log10(totalItems + 1) * 0.25;
-        log("getIdleDrain for tape %s completed in %d ms", tapeId, System.currentTimeMillis() - start);
-        return drain;
+        TapeDriveCache cache = getCacheSafe(tapeId);
+        int totalItems = cache != null ? cache.entries.size() : 0;
+        return 5.0 + Math.log10(Math.max(1, totalItems + 1)) * 0.25;
     }
 
     @Override
     public long insert(AEKey what, long amount, Actionable mode, IActionSource source) {
-        if (disabled) return 0;
-        long start = System.currentTimeMillis();
-        if (!(what instanceof AEItemKey itemKey) || !passesFilter(itemKey)) return 0;
+        if (disabled || !(what instanceof AEItemKey itemKey)) return 0;
+        if (!passesFilter(itemKey)) return 0;
+
         ItemStack stackToInsert = itemKey.toStack((int) amount);
         if (!hasMeaningfulNBT(stackToInsert)) return 0;
         byte[] data = TapeDiskItem.serializeItemStackToBytes(stackToInsert);
         if (data == null || data.length == 0) return 0;
+
         synchronized (getDiskLock(tapeId)) {
-            var cache = TapeDBManager.getCache(tapeId);
-            if (cache != null) {
-                final TapeKey thisKey = new TapeKey(data);
-                Set<TapeKey> simulatedKeys = new HashSet<>(cache.entries.keySet());
-                simulatedKeys.addAll(cache.deltaBuffer.keySet());
-                simulatedKeys.add(thisKey);
-                int simulatedTypeCount = 0;
-                for (TapeKey key : simulatedKeys) {
-                    long existing = cache.entries.getOrDefault(key, StoredEntry.EMPTY).count();
-                    long delta = cache.deltaBuffer.getOrDefault(key, 0L);
-                    long simulatedCount = existing + delta;
-                    if (key.equals(thisKey)) {
-                        simulatedCount += amount;
-                    }
-                    if (simulatedCount > 0) {
-                        simulatedTypeCount++;
-                    }
-                }
-                if (simulatedTypeCount > typeLimit) {
-                    return 0;
-                }
-                long currentBytes = TapeDBManager.getTotalStoredBytes(tapeId);
-                long additionalBytes = Math.round(data.length * amount * 0.75);
-                long totalBytesSimulated = currentBytes + additionalBytes;
-                long byteLimit = getByteLimit(tapeId);
-                if (totalBytesSimulated > byteLimit) {
-                    return 0;
-                }
+            var cache = getCacheSafe(tapeId);
+            if (cache == null) {
+                loadFromDiskAsync(tapeId);
+                return 0;
             }
-            if (mode == Actionable.MODULATE) {
-                TapeDBManager.saveItem(tapeId, data, itemKey, amount);
+
+            TapeKey thisKey = new TapeKey(data);
+            Set<TapeKey> simulatedKeys = new HashSet<>(cache.entries.keySet());
+            simulatedKeys.addAll(cache.deltaBuffer.keySet());
+            simulatedKeys.add(thisKey);
+
+            int simulatedTypeCount = 0;
+            for (TapeKey key : simulatedKeys) {
+                long existing = cache.entries.getOrDefault(key, StoredEntry.EMPTY).count();
+                long delta = cache.deltaBuffer.getOrDefault(key, 0L);
+                long count = existing + delta;
+                if (key.equals(thisKey)) count += amount;
+                if (count > 0) simulatedTypeCount++;
             }
+            if (simulatedTypeCount > typeLimit) return 0;
+
+            long currentBytes = getTotalStoredBytes(tapeId);
+            long extra = Math.round(data.length * amount * 0.75);
+            if (currentBytes + extra > getByteLimit(tapeId)) return 0;
+
+            if (mode == Actionable.MODULATE) saveItem(tapeId, data, itemKey, amount);
         }
-        log("insert for tape %s completed in %d ms", tapeId, System.currentTimeMillis() - start);
         return amount;
     }
 
     @Override
     public long extract(AEKey what, long amount, Actionable mode, IActionSource source) {
-        if (disabled) return 0;
-        long start = System.currentTimeMillis();
-        if (!(what instanceof AEItemKey itemKey)) return 0;
-
-        var cache = TapeDBManager.getCache(tapeId);
-        if (cache == null) return 0;
+        if (disabled || !(what instanceof AEItemKey itemKey)) return 0;
+        var cache = getCacheSafe(tapeId);
+        if (cache == null) {
+            loadFromDiskAsync(tapeId);
+            return 0;
+        }
 
         TapeKey matchKey = null;
         for (var entry : cache.entries.entrySet()) {
@@ -135,58 +118,44 @@ public class TapeDiskInventory implements StorageCell {
                 break;
             }
         }
-
         if (matchKey == null) {
-            // Fallback to serialized key as last resort
             byte[] data = TapeDiskItem.serializeItemStackToBytes(itemKey.toStack((int) amount));
             if (data == null || data.length == 0) return 0;
             matchKey = new TapeKey(data);
         }
 
-        long toExtract;
-        synchronized (getDiskLock(tapeId)) {
-            long available = TapeDBManager.getItemCount(tapeId, matchKey.itemBytes());
-            toExtract = Math.min(available, amount);
-            if (toExtract > 0 && mode == Actionable.MODULATE) {
-                TapeDBManager.saveItem(tapeId, matchKey.itemBytes(), itemKey, -toExtract);
-            }
+        long available = getItemCount(tapeId, matchKey.itemBytes());
+        long toExtract = Math.min(available, amount);
+        if (toExtract > 0 && mode == Actionable.MODULATE) {
+            saveItem(tapeId, matchKey.itemBytes(), itemKey, -toExtract);
         }
-
-        log("extract for tape %s completed in %d ms", tapeId, System.currentTimeMillis() - start);
         return toExtract;
     }
-
 
     @Override
     public void getAvailableStacks(KeyCounter out) {
         if (disabled) return;
-        long start = System.currentTimeMillis();
-        var cache = TapeDBManager.getCache(tapeId);
+        var cache = getCacheSafe(tapeId);
         if (cache == null) {
-            log("getAvailableStacks for tape %s found no cache loaded", tapeId);
+            loadFromDiskAsync(tapeId);
             return;
         }
 
-        Map<TapeKey, Long> combined = new HashMap<>();
-        cache.entries.forEach((k, v) -> combined.put(k, v.count()));
-        cache.deltaBuffer.forEach((k, v) -> combined.merge(k, v, Long::sum));
+        Map<TapeKey, Long> merged = new HashMap<>();
+        cache.entries.forEach((k, v) -> merged.put(k, v.count()));
+        cache.deltaBuffer.forEach((k, v) -> merged.merge(k, v, Long::sum));
 
-        for (var entry : combined.entrySet()) {
+        for (var entry : merged.entrySet()) {
             long count = entry.getValue();
-            if (count > 0) {
-                AEItemKey key = null;
-                StoredEntry stored = cache.entries.get(entry.getKey());
-                if (stored != null && stored.aeKey() != null) {
-                    key = stored.aeKey();
-                } else {
-                    ItemStack stack = TapeDiskItem.deserializeItemStackFromBytes(entry.getKey().itemBytes());
-                    if (!stack.isEmpty()) key = AEItemKey.of(stack);
-                }
-                if (key != null) out.add(key, count);
-            }
+            if (count <= 0) continue;
+            AEItemKey key = Optional.ofNullable(cache.entries.get(entry.getKey()))
+                    .map(StoredEntry::aeKey)
+                    .orElseGet(() -> {
+                        ItemStack is = TapeDiskItem.deserializeItemStackFromBytes(entry.getKey().itemBytes());
+                        return is.isEmpty() ? null : AEItemKey.of(is);
+                    });
+            if (key != null) out.add(key, count);
         }
-
-        log("getAvailableStacks for tape %s completed in %d ms", tapeId, System.currentTimeMillis() - start);
     }
 
     @Override
@@ -213,9 +182,7 @@ public class TapeDiskInventory implements StorageCell {
     }
 
     @Override
-    public void persist() {
-        log("persist called for tape %s", tapeId);
-    }
+    public void persist() {}
 
     @Override
     public Component getDescription() {
@@ -223,36 +190,16 @@ public class TapeDiskInventory implements StorageCell {
     }
 
     private boolean hasMeaningfulNBT(ItemStack stack) {
-        CompoundTag fullTag = (CompoundTag) stack.save(ServerLifecycleHooks.getCurrentServer().registryAccess());
-        CompoundTag filtered = fullTag.copy();
+        CompoundTag tag = (CompoundTag) stack.save(ServerLifecycleHooks.getCurrentServer().registryAccess());
+        CompoundTag filtered = tag.copy();
         filtered.remove("count");
         filtered.remove("id");
         filtered.remove("repairCost");
         filtered.remove("unbreakable");
-
-        if (filtered.contains("tag")) {
-            CompoundTag inner = filtered.getCompound("tag");
-            if (inner.isEmpty()) filtered.remove("tag");
+        if (filtered.contains("tag") && filtered.getCompound("tag").isEmpty()) {
+            filtered.remove("tag");
         }
-        if (!filtered.isEmpty()) {
-            return true;
-        }
-
-        Item item = stack.getItem();
-        if (item instanceof net.minecraft.world.item.ArmorItem) return true;
-        if (item instanceof net.minecraft.world.item.SwordItem) return true;
-        if (item instanceof net.minecraft.world.item.PickaxeItem) return true;
-        if (item instanceof net.minecraft.world.item.AxeItem) return true;
-        if (item instanceof net.minecraft.world.item.ShovelItem) return true;
-        if (item instanceof net.minecraft.world.item.HoeItem) return true;
-        if (item instanceof net.minecraft.world.item.BowItem) return true;
-        if (item instanceof net.minecraft.world.item.CrossbowItem) return true;
-        if (item instanceof net.minecraft.world.item.TridentItem) return true;
-        if (item instanceof net.minecraft.world.item.ShearsItem) return true;
-        if (item instanceof net.minecraft.world.item.FlintAndSteelItem) return true;
-        if (item instanceof net.minecraft.world.item.FishingRodItem) return true;
-        if (item instanceof net.minecraft.world.item.ShieldItem) return true;
-        return stack.getMaxStackSize() == 1;
+        return !filtered.isEmpty();
     }
 
     private boolean passesFilter(AEKey key) {
@@ -269,12 +216,6 @@ public class TapeDiskInventory implements StorageCell {
         return DISK_LOCKS.computeIfAbsent(id, k -> new Object());
     }
 
-    private static void log(String format, Object... args) {
-        if (debug_log) {
-            LOGGER.info(String.format(format, args));
-        }
-    }
-
     public static class Handler implements ICellHandler {
         @Override
         public boolean isCell(ItemStack is) {
@@ -282,7 +223,7 @@ public class TapeDiskInventory implements StorageCell {
         }
 
         @Override
-        public @Nullable StorageCell getCellInventory(ItemStack is, @Nullable appeng.api.storage.cells.ISaveProvider host) {
+        public @Nullable StorageCell getCellInventory(ItemStack is, @Nullable ISaveProvider host) {
             return isCell(is) ? new TapeDiskInventory(is) : null;
         }
     }
