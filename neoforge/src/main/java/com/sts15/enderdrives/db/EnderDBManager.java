@@ -1,6 +1,7 @@
 package com.sts15.enderdrives.db;
 
 import appeng.api.stacks.AEItemKey;
+import com.sts15.enderdrives.config.serverConfig;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.storage.LevelResource;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
@@ -21,22 +22,23 @@ public class EnderDBManager {
     private static final BlockingQueue<byte[]> walQueue = new LinkedBlockingQueue<>();
     public static final ConcurrentHashMap<AEKey, Long> deltaBuffer = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, CachedCount> itemCountCache = new ConcurrentHashMap<>();
-    private static final int MERGE_BUFFER_THRESHOLD = 1000;
     private static File dbFile, currentWAL;
     private static FileOutputStream walFileStream;
     private static DataOutputStream walWriter;
     private static final Object commitLock = new Object();
     private static volatile boolean running = true, dirty = false;
-    private static final long MIN_COMMIT_INTERVAL_MS = 2500, MAX_COMMIT_INTERVAL_MS = 60000;
     private static long lastCommitTime = System.currentTimeMillis();
     private static long lastDbCommitTime = System.currentTimeMillis();
     private static final AtomicLong totalItemsWritten = new AtomicLong(0);
     private static final AtomicLong totalCommits = new AtomicLong(0);
-    private static final long MIN_DB_COMMIT_INTERVAL_MS = 5000;
-    private static final long MAX_DB_COMMIT_INTERVAL_MS = 60000;
-    private static final boolean DEBUG_LOG = false;
-    private static final ForkJoinPool SHARED_PARALLEL_POOL =
-            new ForkJoinPool(Math.min(4, Runtime.getRuntime().availableProcessors()));
+    private static final ForkJoinPool SHARED_PARALLEL_POOL = new ForkJoinPool(Math.min(4, Runtime.getRuntime().availableProcessors()));
+    static int mergeThreshold = serverConfig.END_DB_MERGE_BUFFER_THRESHOLD.get();
+    static long minCommit = serverConfig.END_DB_MIN_COMMIT_INTERVAL_MS.get();
+    static long maxCommit = serverConfig.END_DB_MAX_COMMIT_INTERVAL_MS.get();
+    static long minDbCommit = serverConfig.END_DB_MIN_DB_COMMIT_INTERVAL_MS.get();
+    static long maxDbCommit = serverConfig.END_DB_MAX_DB_COMMIT_INTERVAL_MS.get();
+    static boolean debugLog = serverConfig.END_DB_DEBUG_LOG.get();
+    private static volatile boolean isShutdown = false;
 
 // ==== Public API ====
 
@@ -69,6 +71,8 @@ public class EnderDBManager {
      * Shuts down the EnderDB system gracefully by flushing buffers, committing data, and closing WAL streams.
      */
     public static void shutdown() {
+        if (isShutdown) return;
+        isShutdown = true;
         running = false;
         try {
             synchronized (commitLock) {
@@ -77,8 +81,23 @@ public class EnderDBManager {
                 truncateCurrentWAL();
                 closeWALStream();
             }
-        } catch (IOException ignored) {}
+        } catch (IOException e) {
+            LOGGER.error("Exception during EnderDBManager shutdown: ", e);
+        }
+        dbMap.clear();
+        deltaBuffer.clear();
+        itemCountCache.clear();
+        walQueue.clear();
+        totalItemsWritten.set(0);
+        totalCommits.set(0);
+        isShutdown = false;
+        running = true;
+        dirty = false;
+        lastCommitTime = System.currentTimeMillis();
+        lastDbCommitTime = System.currentTimeMillis();
+        LOGGER.info("[EnderDBManager] Shutdown complete and ready for re-init.");
     }
+
 
     /**
      * Saves an item delta into the database, merging counts by item key.
@@ -92,7 +111,7 @@ public class EnderDBManager {
         AEKey key = new AEKey(scopePrefix, freq, itemNbtBinary);
         deltaBuffer.merge(key, deltaCount, Long::sum);
 
-        if (deltaBuffer.size() >= MERGE_BUFFER_THRESHOLD) {
+        if (deltaBuffer.size() >= mergeThreshold ) {
             flushDeltaBuffer();
         }
     }
@@ -300,8 +319,8 @@ public class EnderDBManager {
 
                     long now = System.currentTimeMillis();
 
-                    boolean minIntervalElapsed = now - lastCommitTime >= MIN_COMMIT_INTERVAL_MS;
-                    boolean maxIntervalElapsed = now - lastCommitTime >= MAX_COMMIT_INTERVAL_MS;
+                    boolean minIntervalElapsed = now - lastCommitTime >= minCommit ;
+                    boolean maxIntervalElapsed = now - lastCommitTime >= maxCommit ;
 
                     boolean shouldCommit = (!batch.isEmpty() && minIntervalElapsed)
                             || walQueue.size() >= dynamicBatchSize * 2
@@ -321,8 +340,8 @@ public class EnderDBManager {
                             if (!batch.isEmpty()) {
                                 log("Committed %d WAL entries. TotalItems=%d", batch.size(), totalItemsWritten);
                             }
-                            boolean minDbCommitElapsed = now - lastDbCommitTime >= MIN_DB_COMMIT_INTERVAL_MS;
-                            boolean maxDbCommitElapsed = now - lastDbCommitTime >= MAX_DB_COMMIT_INTERVAL_MS;
+                            boolean minDbCommitElapsed = now - lastDbCommitTime >= minDbCommit ;
+                            boolean maxDbCommitElapsed = now - lastDbCommitTime >= maxDbCommit ;
                             if (dirty && (batch.size() > 1000 || maxDbCommitElapsed || minDbCommitElapsed)) {
                                 commitDatabase();
                                 truncateCurrentWAL();
@@ -605,7 +624,7 @@ public class EnderDBManager {
      * @param args   Format arguments.
      */
     private static void log(String format, Object... args) {
-        if (DEBUG_LOG) {
+        if (debugLog) {
             LOGGER.debug("[EnderDiskInventory] " + format, args);
         }
     }

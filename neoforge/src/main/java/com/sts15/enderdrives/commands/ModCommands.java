@@ -5,8 +5,10 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.sts15.enderdrives.config.serverConfig;
 import com.sts15.enderdrives.db.AEKeyCacheEntry;
 import com.sts15.enderdrives.db.EnderDBManager;
+import com.sts15.enderdrives.db.TapeDBManager;
 import com.sts15.enderdrives.inventory.EnderDiskInventory;
 import com.sts15.enderdrives.items.EnderDiskItem;
 import net.minecraft.commands.CommandSourceStack;
@@ -20,7 +22,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Level;
-import java.io.File;
+
+import java.io.*;
 import java.util.*;
 
 public class ModCommands {
@@ -36,6 +39,8 @@ public class ModCommands {
                                         .executes(ctx -> {
                                             int freq = IntegerArgumentType.getInteger(ctx, "frequency");
                                             CommandSourceStack source = ctx.getSource();
+                                            if (!validateFrequency(freq, source)) return 0;
+
                                             ItemStack heldItem = source.getPlayerOrException().getMainHandItem();
                                             if (heldItem.getItem() instanceof EnderDiskItem) {
                                                 EnderDiskItem.setFrequency(heldItem, freq);
@@ -59,33 +64,31 @@ public class ModCommands {
                                                 .executes(ctx -> {
                                                     CommandSourceStack source = ctx.getSource();
                                                     ServerPlayer player = source.getPlayerOrException();
-                                                    UUID playerId = player.getUUID();
-                                                    String type = StringArgumentType.getString(ctx, "type").toLowerCase();
                                                     int frequency = IntegerArgumentType.getInteger(ctx, "frequency");
+                                                    if (!validateFrequency(frequency, source)) return 0;
+
+                                                    String type = StringArgumentType.getString(ctx, "type").toLowerCase();
+                                                    UUID playerId = player.getUUID();
 
                                                     String scopePrefix;
                                                     switch (type) {
-                                                        case "private":
-                                                            scopePrefix = "player_" + playerId;
-                                                            break;
-                                                        case "team":
-                                                            scopePrefix = "team_" + playerId;
-                                                            break;
-                                                        case "global":
+                                                        case "private" -> scopePrefix = "player_" + playerId;
+                                                        case "team" -> scopePrefix = "team_" + playerId;
+                                                        case "global" -> {
                                                             if (!source.hasPermission(4)) {
                                                                 source.sendFailure(Component.literal("§cYou must be a server operator to clear general channels."));
                                                                 return 0;
                                                             }
                                                             scopePrefix = "global";
-                                                            break;
-                                                        default:
+                                                        }
+                                                        default -> {
                                                             source.sendFailure(Component.literal("§cInvalid channel type. Use 'private', 'team', or 'global'."));
                                                             return 0;
+                                                        }
                                                     }
 
-                                                    // Confirmation check
-                                                    String key = playerId.toString() + ":" + type + ":" + frequency;
-                                                    if (!pendingClearRequests.containsKey(playerId) || !pendingClearRequests.get(playerId).equals(key)) {
+                                                    String key = playerId + ":" + type + ":" + frequency;
+                                                    if (!key.equals(pendingClearRequests.get(playerId))) {
                                                         pendingClearRequests.put(playerId, key);
                                                         source.sendSuccess(() -> Component.literal(
                                                                 "§c⚠ This will permanently delete all items stored in frequency §e" + frequency +
@@ -94,7 +97,6 @@ public class ModCommands {
                                                         return 1;
                                                     }
 
-                                                    // Confirmed: perform deletion
                                                     pendingClearRequests.remove(playerId);
                                                     EnderDBManager.clearFrequency(scopePrefix, frequency);
                                                     EnderDBManager.commitDatabase();
@@ -125,10 +127,11 @@ public class ModCommands {
                         .then(Commands.literal("autobenchmark")
                                 .then(Commands.argument("frequency", IntegerArgumentType.integer(0, 4095))
                                         .executes(ctx -> {
+                                            int frequency = IntegerArgumentType.getInteger(ctx, "frequency");
                                             CommandSourceStack source = ctx.getSource();
+                                            if (!validateFrequency(frequency, source)) return 0;
                                             ServerPlayer player = source.getPlayerOrException();
                                             UUID playerId = player.getUUID();
-                                            int frequency = IntegerArgumentType.getInteger(ctx, "frequency");
 
                                             if (!pendingBenchmarkRequests.containsKey(playerId)) {
                                                 pendingBenchmarkRequests.put(playerId, frequency);
@@ -163,12 +166,12 @@ public class ModCommands {
                                             Thread t = new Thread(() -> {
                                                 try {
 
-                                                    final int step = 5000;
-                                                    final int maxSize = 2_000_000;
-                                                    final double minSafeTPS = 18.0;
+                                                    final int step = serverConfig.AUTO_BENCHMARK_STEP.get();
+                                                    final int maxSize = serverConfig.AUTO_BENCHMARK_MAX_TYPES.get();
+                                                    final double minSafeTPS = serverConfig.AUTO_BENCHMARK_MIN_TPS.get();
                                                     int bestSize = 0;
                                                     byte[] serialized;
-                                                    int currentSize = 10000;
+                                                    int currentSize = serverConfig.AUTO_BENCHMARK_INITIAL_SIZE.get();
                                                     boolean continueTesting = true;
 
                                                     while (continueTesting && currentSize <= maxSize) {
@@ -185,7 +188,7 @@ public class ModCommands {
                                                         }
                                                         long insertEnd = System.currentTimeMillis();
                                                         EnderDBManager.flushDeltaBuffer();
-                                                        Thread.sleep(10000);
+                                                        Thread.sleep(serverConfig.AUTO_BENCHMARK_MS_SLEEP.get());
 
                                                         long[] tickTimes = server.getTickTime(Level.OVERWORLD);
                                                         double avgTick = Arrays.stream(tickTimes).average().orElse(0) / 1_000_000.0;
@@ -241,12 +244,12 @@ public class ModCommands {
                                 )
                         )
 
-
                         .then(Commands.literal("stress")
                                 .then(Commands.argument("frequency", IntegerArgumentType.integer(0, 4095))
                                         .then(Commands.argument("amount", IntegerArgumentType.integer(1,2000000))
                                                 .executes(ctx -> {
                                                     int frequency = IntegerArgumentType.getInteger(ctx, "frequency");
+                                                    if (!validateFrequency(frequency, ctx.getSource())) return 0;
                                                     int amount = IntegerArgumentType.getInteger(ctx, "amount");
                                                     CommandSourceStack source = ctx.getSource();
                                                     ServerPlayer player = source.getPlayerOrException();
@@ -287,7 +290,400 @@ public class ModCommands {
                                                 })
                                         ))
                         )
+                        .then(Commands.literal("tape")
+                                .then(Commands.literal("release")
+                                        .then(Commands.argument("uuid", StringArgumentType.string())
+                                                .suggests((ctx, builder) -> {
+                                                    com.sts15.enderdrives.db.TapeDBManager.getActiveTapeIds().forEach(uuid -> builder.suggest(uuid.toString()));
+                                                    return builder.buildFuture();
+                                                })
+                                                .executes(ctx -> {
+                                                    CommandSourceStack source = ctx.getSource();
+                                                    String uuidStr = StringArgumentType.getString(ctx, "uuid");
+                                                    try {
+                                                        UUID uuid = UUID.fromString(uuidStr);
+                                                        if (!com.sts15.enderdrives.db.TapeDBManager.getActiveTapeIds().contains(uuid)) {
+                                                            source.sendFailure(Component.literal("§cTape " + uuid + " is not currently cached in RAM."));
+                                                            return 0;
+                                                        }
+
+                                                        com.sts15.enderdrives.db.TapeDBManager.releaseFromRAM(uuid);
+                                                        source.sendSuccess(() -> Component.literal("§a✔ Released tape " + uuid + " from RAM."), true);
+                                                        return 1;
+                                                    } catch (IllegalArgumentException e) {
+                                                        source.sendFailure(Component.literal("§cInvalid UUID format: " + uuidStr));
+                                                        return 0;
+                                                    }
+                                                })
+                                        )
+                                )
+                                .then(Commands.literal("list")
+                                        .executes(ctx -> {
+                                            CommandSourceStack source = ctx.getSource();
+                                            Set<UUID> cached = com.sts15.enderdrives.db.TapeDBManager.getActiveTapeIds();
+
+                                            if (cached.isEmpty()) {
+                                                source.sendSuccess(() -> Component.literal("§7No tape drives are currently cached in RAM."), false);
+                                                return 1;
+                                            }
+
+                                            source.sendSuccess(() -> Component.literal("§bCached Tape Drives:"), false);
+
+                                            for (UUID id : cached) {
+                                                int typeCount = com.sts15.enderdrives.db.TapeDBManager.getTypeCount(id);
+                                                source.sendSuccess(() ->
+                                                                Component.literal(" §8- §f" + id.toString() + " §7| Types: §a" + typeCount),
+                                                        false
+                                                );
+                                            }
+
+                                            return 1;
+                                        })
+                                )
+                                .then(Commands.literal("export")
+                                        .then(Commands.argument("uuid", StringArgumentType.string())
+                                                .suggests((ctx, builder) -> {
+                                                    com.sts15.enderdrives.db.TapeDBManager.getActiveTapeIds().forEach(uuid -> builder.suggest(uuid.toString()));
+                                                    return builder.buildFuture();
+                                                })
+                                                .executes(ctx -> {
+                                                    CommandSourceStack source = ctx.getSource();
+                                                    String uuidStr = StringArgumentType.getString(ctx, "uuid");
+                                                    try {
+                                                        UUID uuid = UUID.fromString(uuidStr);
+                                                        boolean success = com.sts15.enderdrives.db.TapeDBManager.exportToJson(uuid);
+                                                        if (!success) {
+                                                            source.sendFailure(Component.literal("§cFailed to export. Tape might not exist or is corrupted."));
+                                                            return 0;
+                                                        }
+                                                        source.sendSuccess(() -> Component.literal("§a✔ Exported tape " + uuid + " to JSON."), false);
+                                                        return 1;
+                                                    } catch (IllegalArgumentException e) {
+                                                        source.sendFailure(Component.literal("§cInvalid UUID format: " + uuidStr));
+                                                        return 0;
+                                                    }
+                                                })
+                                        )
+                                )
+                                .then(Commands.literal("import")
+                                        .then(Commands.argument("uuid", StringArgumentType.string())
+                                                .suggests((ctx, builder) -> {
+                                                    com.sts15.enderdrives.db.TapeDBManager.getActiveTapeIds().forEach(uuid -> builder.suggest(uuid.toString()));
+                                                    return builder.buildFuture();
+                                                })
+                                                .executes(ctx -> {
+                                                    CommandSourceStack source = ctx.getSource();
+                                                    String uuidStr = StringArgumentType.getString(ctx, "uuid");
+                                                    try {
+                                                        UUID uuid = UUID.fromString(uuidStr);
+                                                        boolean success = com.sts15.enderdrives.db.TapeDBManager.importFromJson(uuid);
+                                                        if (!success) {
+                                                            source.sendFailure(Component.literal("§cFailed to import. File missing or invalid format."));
+                                                            return 0;
+                                                        }
+                                                        source.sendSuccess(() -> Component.literal("§a✔ Imported tape " + uuid + " from JSON."), false);
+                                                        return 1;
+                                                    } catch (IllegalArgumentException e) {
+                                                        source.sendFailure(Component.literal("§cInvalid UUID format: " + uuidStr));
+                                                        return 0;
+                                                    }
+                                                })
+                                        )
+                                )
+                                .then(Commands.literal("oldest")
+                                        .executes(ctx -> {
+                                            CommandSourceStack source = ctx.getSource();
+                                            List<File> files = com.sts15.enderdrives.db.TapeDBManager.getSortedBinFilesOldestFirst();
+                                            if (files.isEmpty()) {
+                                                source.sendSuccess(() -> Component.literal("§7No saved tape drives found."), false);
+                                                return 1;
+                                            }
+
+                                            source.sendSuccess(() -> Component.literal("§bOldest Tape Drives:"), false);
+                                            for (File f : files) {
+                                                String name = f.getName().replace(".bin", "");
+                                                long lastMod = f.lastModified();
+                                                long size = f.length();
+                                                String time = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(lastMod));
+                                                source.sendSuccess(() -> Component.literal(" §8- §f" + name + " §7| Modified: §6" + time + " §7| Size: §e" + size + " bytes"), false);
+                                            }
+
+                                            return 1;
+                                        })
+                                )
+                                .then(Commands.literal("delete")
+                                        .then(Commands.argument("uuid", StringArgumentType.string())
+                                                .suggests((ctx, builder) -> {
+                                                    com.sts15.enderdrives.db.TapeDBManager.getSortedBinFilesOldestFirst().forEach(f -> builder.suggest(f.getName().replace(".bin", "")));
+                                                    return builder.buildFuture();
+                                                })
+                                                .executes(ctx -> {
+                                                    String uuidStr = StringArgumentType.getString(ctx, "uuid");
+                                                    CommandSourceStack source = ctx.getSource();
+                                                    try {
+                                                        UUID uuid = UUID.fromString(uuidStr);
+                                                        if (com.sts15.enderdrives.db.TapeDBManager.getActiveTapeIds().contains(uuid)) {
+                                                            com.sts15.enderdrives.db.TapeDBManager.releaseFromRAM(uuid);
+                                                            source.sendSuccess(() -> Component.literal("§eTape " + uuid + " was cached in RAM and has been released."), false);
+                                                        }
+
+                                                        boolean success = com.sts15.enderdrives.db.TapeDBManager.deleteTape(uuid);
+                                                        if (!success) {
+                                                            source.sendFailure(Component.literal("§cFailed to delete tape " + uuid + ". File may not exist."));
+                                                            return 0;
+                                                        }
+
+                                                        source.sendSuccess(() -> Component.literal("§a✔ Deleted tape " + uuid + " from disk."), true);
+                                                        return 1;
+                                                    } catch (IllegalArgumentException e) {
+                                                        source.sendFailure(Component.literal("§cInvalid UUID: " + uuidStr));
+                                                        return 0;
+                                                    }
+                                                })
+                                        )
+                                )
+                                .then(Commands.literal("diagnose")
+                                        .then(Commands.argument("uuid", StringArgumentType.string())
+                                                .suggests((ctx, builder) -> {
+                                                    com.sts15.enderdrives.db.TapeDBManager.getSortedBinFilesOldestFirst().forEach(f -> builder.suggest(f.getName().replace(".bin", "")));
+                                                    return builder.buildFuture();
+                                                })
+                                                .executes(ctx -> {
+                                                    CommandSourceStack source = ctx.getSource();
+                                                    String uuidStr = StringArgumentType.getString(ctx, "uuid");
+
+                                                    try {
+                                                        UUID uuid = UUID.fromString(uuidStr);
+                                                        File file = com.sts15.enderdrives.db.TapeDBManager.getDiskFile(uuid);
+                                                        if (!file.exists()) {
+                                                            source.sendFailure(Component.literal("§cNo .bin file exists for tape " + uuid));
+                                                            return 0;
+                                                        }
+
+                                                        int total = 0;
+                                                        int failed = 0;
+                                                        long bytes = file.length();
+
+                                                        try (DataInputStream dis = new DataInputStream(new FileInputStream(file))) {
+                                                            while (true) {
+                                                                int len = dis.readInt();
+                                                                byte[] data = new byte[len];
+                                                                dis.readFully(data);
+                                                                dis.readLong(); // count
+                                                                total++;
+
+                                                                var stack = com.sts15.enderdrives.items.TapeDiskItem.deserializeItemStackFromBytes(data);
+                                                                if (stack.isEmpty()) failed++;
+                                                            }
+                                                        } catch (EOFException ignored) {
+                                                        } catch (IOException e) {
+                                                            source.sendFailure(Component.literal("§cError while scanning tape file: " + e.getMessage()));
+                                                            return 0;
+                                                        }
+
+                                                        source.sendSuccess(() -> Component.literal("§b[Diagnosis for " + uuid + "]"), false);
+                                                        int finalTotal = total;
+                                                        source.sendSuccess(() -> Component.literal(" §7Total entries: §a" + finalTotal), false);
+                                                        int finalFailed = failed;
+                                                        source.sendSuccess(() -> Component.literal(" §7Malformed: §c" + finalFailed), false);
+                                                        source.sendSuccess(() -> Component.literal(" §7Size: §e" + bytes + " bytes"), false);
+
+                                                        if (failed > 0) {
+                                                            source.sendSuccess(() -> Component.literal("§e⚠ Suggest exporting backup with /enderdrives tape export " + uuid), false);
+                                                        }
+
+                                                        return 1;
+                                                    } catch (IllegalArgumentException e) {
+                                                        source.sendFailure(Component.literal("§cInvalid UUID format: " + uuidStr));
+                                                        return 0;
+                                                    }
+                                                })
+                                        )
+                                )
+                                .then(Commands.literal("diagnose-all")
+                                        .executes(ctx -> {
+                                            CommandSourceStack source = ctx.getSource();
+                                            List<File> files = com.sts15.enderdrives.db.TapeDBManager.getSortedBinFilesOldestFirst();
+                                            if (files.isEmpty()) {
+                                                source.sendSuccess(() -> Component.literal("§7No saved tape drives to verify."), false);
+                                                return 1;
+                                            }
+
+                                            int badCount = 0;
+                                            for (File file : files) {
+                                                UUID id = UUID.fromString(file.getName().replace(".bin", ""));
+                                                int total = 0;
+                                                int failed = 0;
+                                                try (DataInputStream dis = new DataInputStream(new FileInputStream(file))) {
+                                                    while (true) {
+                                                        int len = dis.readInt();
+                                                        byte[] data = new byte[len];
+                                                        dis.readFully(data);
+                                                        dis.readLong(); // count
+                                                        total++;
+                                                        var stack = com.sts15.enderdrives.items.TapeDiskItem.deserializeItemStackFromBytes(data);
+                                                        if (stack.isEmpty()) failed++;
+                                                    }
+                                                } catch (EOFException ignored) {
+                                                } catch (Exception e) {
+                                                    source.sendFailure(Component.literal("§cError verifying tape " + id + ": " + e.getMessage()));
+                                                    continue;
+                                                }
+
+                                                int finalTotal;
+                                                if (failed > 0) {
+                                                    badCount++;
+                                                    int finalFailed = failed;
+                                                    finalTotal = total;
+                                                    source.sendSuccess(() -> Component.literal("§c" + id + " — " + finalFailed + "/" + finalTotal + " entries failed"), false);
+                                                } else {
+                                                    finalTotal = 0;
+                                                    source.sendSuccess(() -> Component.literal("§a" + id + " — OK (" + finalTotal + " entries)"), false);
+                                                }
+                                            }
+
+                                            int finalBadCount = badCount;
+                                            source.sendSuccess(() -> Component.literal("§b✔ Finished verifying " + files.size() + " tape(s). Bad tapes: §c" + finalBadCount), false);
+                                            return 1;
+                                        })
+                                )
+                                .then(Commands.literal("stats")
+                                        .executes(ctx -> {
+                                            CommandSourceStack source = ctx.getSource();
+                                            Set<UUID> cached = com.sts15.enderdrives.db.TapeDBManager.getActiveTapeIds();
+                                            int cachedDrives = cached.size();
+                                            int totalTypes = 0;
+                                            long totalBytes = 0;
+
+                                            for (UUID id : cached) {
+                                                totalTypes += com.sts15.enderdrives.db.TapeDBManager.getTypeCount(id);
+                                                totalBytes += com.sts15.enderdrives.db.TapeDBManager.getTotalStoredBytes(id);
+                                            }
+
+                                            long totalFiles = com.sts15.enderdrives.db.TapeDBManager.getSortedBinFilesOldestFirst().stream().count();
+                                            long totalDiskSize = com.sts15.enderdrives.db.TapeDBManager.getSortedBinFilesOldestFirst().stream()
+                                                    .mapToLong(File::length).sum();
+
+                                            source.sendSuccess(() -> Component.literal("§b[EnderDrives Tape Stats]"), false);
+                                            source.sendSuccess(() -> Component.literal(" §7Cached Drives: §a" + cachedDrives), false);
+                                            int finalTotalTypes = totalTypes;
+                                            source.sendSuccess(() -> Component.literal(" §7Total Types Cached: §e" + finalTotalTypes), false);
+                                            long finalTotalBytes = totalBytes;
+                                            source.sendSuccess(() -> Component.literal(" §7RAM Usage (Est.): §d" + finalTotalBytes + " bytes"), false);
+                                            source.sendSuccess(() -> Component.literal(" §7Stored .bin Files: §b" + totalFiles), false);
+                                            source.sendSuccess(() -> Component.literal(" §7Disk Usage: §6" + totalDiskSize + " bytes"), false);
+
+                                            return 1;
+                                        })
+                                )
+                                .then(Commands.literal("cleanup-empty")
+                                        .executes(ctx -> {
+                                            CommandSourceStack source = ctx.getSource();
+                                            List<File> files = com.sts15.enderdrives.db.TapeDBManager.getSortedBinFilesOldestFirst();
+                                            int removed = 0;
+
+                                            for (File file : files) {
+                                                UUID id = UUID.fromString(file.getName().replace(".bin", ""));
+                                                int total = 0;
+                                                try (DataInputStream dis = new DataInputStream(new FileInputStream(file))) {
+                                                    while (true) {
+                                                        int len = dis.readInt();
+                                                        dis.skipBytes(len);
+                                                        dis.readLong();
+                                                        total++;
+                                                    }
+                                                } catch (EOFException ignored) {
+                                                } catch (Exception e) {
+                                                    source.sendFailure(Component.literal("§cFailed to read tape " + id + ": " + e.getMessage()));
+                                                    continue;
+                                                }
+
+                                                if (total == 0) {
+                                                    if (com.sts15.enderdrives.db.TapeDBManager.getActiveTapeIds().contains(id)) {
+                                                        com.sts15.enderdrives.db.TapeDBManager.releaseFromRAM(id);
+                                                    }
+                                                    com.sts15.enderdrives.db.TapeDBManager.deleteTape(id);
+                                                    removed++;
+                                                }
+                                            }
+
+                                            int finalRemoved = removed;
+                                            source.sendSuccess(() -> Component.literal("§a✔ Removed §b" + finalRemoved + "§a empty tape(s)."), false);
+                                            return 1;
+                                        })
+                                )
+                                .then(Commands.literal("pin")
+                                        .then(Commands.argument("uuid", StringArgumentType.string())
+                                                .suggests((ctx, builder) -> {
+                                                    TapeDBManager.getActiveTapeIds().forEach(id -> builder.suggest(id.toString()));
+                                                    return builder.buildFuture();
+                                                })
+                                                .executes(ctx -> {
+                                                    UUID uuid = UUID.fromString(StringArgumentType.getString(ctx, "uuid"));
+                                                    TapeDBManager.pin(uuid);
+                                                    ctx.getSource().sendSuccess(() -> Component.literal("§a✔ Tape " + uuid + " pinned to RAM."), true);
+                                                    return 1;
+                                                })
+                                        )
+                                )
+                                .then(Commands.literal("unpin")
+                                        .then(Commands.argument("uuid", StringArgumentType.string())
+                                                .suggests((ctx, builder) -> {
+                                                    TapeDBManager.getPinnedTapes().forEach(id -> builder.suggest(id.toString()));
+                                                    return builder.buildFuture();
+                                                })
+                                                .executes(ctx -> {
+                                                    UUID uuid = UUID.fromString(StringArgumentType.getString(ctx, "uuid"));
+                                                    TapeDBManager.unpin(uuid);
+                                                    ctx.getSource().sendSuccess(() -> Component.literal("§e✔ Tape " + uuid + " unpinned."), true);
+                                                    return 1;
+                                                })
+                                        )
+                                )
+                                .then(Commands.literal("info")
+                                        .then(Commands.argument("uuid", StringArgumentType.string())
+                                                .suggests((ctx, builder) -> {
+                                                    TapeDBManager.getSortedBinFilesOldestFirst().forEach(f -> builder.suggest(f.getName().replace(".bin", "")));
+                                                    return builder.buildFuture();
+                                                })
+                                                .executes(ctx -> {
+                                                    UUID uuid = UUID.fromString(StringArgumentType.getString(ctx, "uuid"));
+                                                    boolean cached = TapeDBManager.getCache(uuid) != null;
+                                                    int typeCount = TapeDBManager.getTypeCount(uuid);
+                                                    long byteSize = TapeDBManager.getTotalStoredBytes(uuid);
+                                                    boolean pinned = TapeDBManager.isPinned(uuid);
+                                                    long lastAccessed = cached ? TapeDBManager.getCache(uuid).lastAccessed : -1;
+                                                    String accessed = lastAccessed > 0
+                                                            ? new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date(lastAccessed))
+                                                            : "§7(Not in RAM)";
+
+                                                    ctx.getSource().sendSuccess(() -> Component.literal("§b[Info for Tape " + uuid + "]"), false);
+                                                    ctx.getSource().sendSuccess(() -> Component.literal(" §7In RAM: " + (cached ? "§aYes" : "§cNo")), false);
+                                                    ctx.getSource().sendSuccess(() -> Component.literal(" §7Pinned: " + (pinned ? "§aYes" : "§cNo")), false);
+                                                    ctx.getSource().sendSuccess(() -> Component.literal(" §7Types: §e" + typeCount), false);
+                                                    ctx.getSource().sendSuccess(() -> Component.literal(" §7Bytes: §d" + byteSize), false);
+                                                    ctx.getSource().sendSuccess(() -> Component.literal(" §7Last Accessed: " + accessed), false);
+                                                    return 1;
+                                                })
+                                        )
+                                )
+
+
+
+                        )
+
 
         );
     }
+
+    private static boolean validateFrequency(int freq, CommandSourceStack source) {
+        int min = serverConfig.FREQ_MIN.get();
+        int max = serverConfig.FREQ_MAX.get();
+        if (freq < min || freq > max) {
+            source.sendFailure(Component.literal("§cFrequency must be between §e" + min + "§c and §e" + max + "§c."));
+            return false;
+        }
+        return true;
+    }
+
 }

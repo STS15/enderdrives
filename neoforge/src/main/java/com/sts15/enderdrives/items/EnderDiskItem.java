@@ -8,11 +8,13 @@ import appeng.items.contents.CellConfig;
 import appeng.menu.locator.ItemMenuHostLocator;
 import appeng.util.ConfigInventory;
 import appeng.util.Platform;
+import com.sts15.enderdrives.config.serverConfig;
 import com.sts15.enderdrives.db.ClientDiskCache;
 import com.sts15.enderdrives.db.DiskTypeInfo;
 import com.sts15.enderdrives.integration.FTBTeamsCompat;
 import com.sts15.enderdrives.network.NetworkHandler;
 import com.sts15.enderdrives.screen.EnderDiskFrequencyScreen;
+import com.sts15.enderdrives.screen.FrequencyScope;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
@@ -32,6 +34,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem {
 
@@ -41,20 +44,24 @@ public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem
     private static final String TEAM_KEY = "ender_team";
     private static final String TEAM_NAME_KEY = "ender_team_name";
     private static final String TRANSFER_MODE_KEY = "ender_transfer_mode";
-    private final int typeLimit;
+    private final Supplier<Integer> typeLimit;
 
-    public EnderDiskItem(Properties props, int typeLimit) {
+    public EnderDiskItem(Properties props, Supplier<Integer> typeLimit) {
         super(props.stacksTo(1));
         this.typeLimit = typeLimit;
     }
 
     public int getTypeLimit() {
-        return this.typeLimit;
+        return typeLimit.get();
     }
 
     @Override
     public void appendHoverText(@NotNull ItemStack stack, @NotNull TooltipContext context, @NotNull List<Component> lines, @NotNull TooltipFlag advancedTooltips) {
         if (Platform.isClient()) {
+            if (isDisabled(stack)) {
+                lines.add(Component.literal("§cThis item is disabled on the server."));
+                return;
+            }
             addCellInformationToTooltip(stack, lines);
         }
     }
@@ -63,7 +70,6 @@ public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem
     public void addCellInformationToTooltip(ItemStack stack, List<Component> lines) {
         Player player = Minecraft.getInstance().player;
         int freq = getFrequency(stack);
-        int scope = getScope(stack);
         String scopePrefix = getSafeScopePrefix(stack);
         String key = scopePrefix + "|" + freq;
 
@@ -95,21 +101,23 @@ public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem
             default -> "tooltip.enderdrives.mode.bidirectional";
         };
         lines.add(Component.translatable(modeKey));
+        FrequencyScope scope = getScope(stack);
         Component scopeLine = switch (scope) {
-            case 1 -> {
+            case PERSONAL -> {
                 UUID owner = getOwnerUUID(stack);
                 String name = (player != null && owner != null && player.getUUID().equals(owner))
                         ? player.getName().getString()
                         : (owner != null ? owner.toString() : Component.translatable("tooltip.enderdrives.unknown").getString());
                 yield Component.translatable("tooltip.enderdrives.scope.private", name);
             }
-            case 2 -> {
+            case TEAM -> {
                 String teamName = getStoredTeamName(stack);
                 yield Component.translatable("tooltip.enderdrives.scope.team",
                         teamName != null ? teamName : Component.translatable("tooltip.enderdrives.unknown"));
             }
             default -> Component.translatable("tooltip.enderdrives.scope.global");
         };
+
         lines.add(scopeLine);
     }
 
@@ -139,22 +147,23 @@ public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem
     }
 
     public static String getSafeScopePrefix(ItemStack stack) {
-        int scope = getScope(stack);
+        FrequencyScope scope = getScope(stack);
         return switch (scope) {
-            case 1 -> {
+            case PERSONAL -> {
                 UUID owner = getOwnerUUID(stack);
                 yield (owner != null) ? "player_" + owner : "player_unknown";
             }
-            case 2 -> {
+            case TEAM -> {
                 String teamId = getStoredTeamId(stack);
                 yield (teamId != null && !teamId.isEmpty()) ? "team_" + teamId : "global";
             }
             default -> "global";
         };
+
     }
 
     public int getTypeLimit(ItemStack stack) {
-        return this.typeLimit;
+        return this.typeLimit.get();
     }
 
     public static int getFrequency(ItemStack stack) {
@@ -172,20 +181,21 @@ public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem
         });
     }
 
-    public static int getScope(ItemStack stack) {
+    public static FrequencyScope getScope(ItemStack stack) {
         CustomData data = stack.get(DataComponents.CUSTOM_DATA);
-        if (data == null) return 0;
+        if (data == null) return FrequencyScope.getDefault(); // default from config
         CompoundTag tag = data.copyTag();
-        return tag.getInt(SCOPE_KEY);
+        return FrequencyScope.fromId(tag.getInt(SCOPE_KEY));
     }
 
-    public static void setScope(ItemStack stack, int scope) {
+    public static void setScope(ItemStack stack, FrequencyScope scope) {
         stack.update(DataComponents.CUSTOM_DATA, CustomData.EMPTY, oldData -> {
             CompoundTag tag = oldData.copyTag();
-            tag.putInt(SCOPE_KEY, scope);
+            tag.putInt(SCOPE_KEY, scope.id);
             return CustomData.of(tag);
         });
     }
+
 
     public static void setOwnerUUID(ItemStack stack, UUID uuid) {
         stack.update(DataComponents.CUSTOM_DATA, CustomData.EMPTY, oldData -> {
@@ -241,9 +251,15 @@ public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack itemStack = player.getItemInHand(hand);
+        if (isDisabled(itemStack)) {
+            if (level.isClientSide) {
+                player.displayClientMessage(Component.literal("§cThis EnderDisk is disabled on the server."), true);
+            }
+            return InteractionResultHolder.fail(itemStack);
+        }
         if (level.isClientSide) {
             int freq = getFrequency(itemStack);
-            int scope = getScope(itemStack);
+            FrequencyScope scope = getScope(itemStack);
             int transferMode = getTransferMode(itemStack);
             EnderDiskFrequencyScreen.open(freq, scope, transferMode);
         } else if (player instanceof ServerPlayer serverPlayer) {
@@ -252,6 +268,21 @@ public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem
         return InteractionResultHolder.sidedSuccess(itemStack, level.isClientSide());
     }
 
+    public boolean isDisabled(ItemStack stack) {
+        int index = getDriveIndex(this);
+        return index >= 0 && com.sts15.enderdrives.client.ClientConfigCache.isDriveDisabled(index);
+    }
+
+    public static int getDriveIndex(Item item) {
+        if (item == ItemInit.ENDER_DISK_1K.get()) return 0;
+        if (item == ItemInit.ENDER_DISK_4K.get()) return 1;
+        if (item == ItemInit.ENDER_DISK_16K.get()) return 2;
+        if (item == ItemInit.ENDER_DISK_64K.get()) return 3;
+        if (item == ItemInit.ENDER_DISK_256K.get()) return 4;
+        if (item == ItemInit.ENDER_DISK_creative.get()) return 5;
+        if (item == ItemInit.TAPE_DISK.get()) return 6;
+        return -1;
+    }
 
     public static void resolveAndCacheTeamInfo(ItemStack stack, ServerPlayer player) {
         if (!ModList.get().isLoaded("ftbteams")) return;

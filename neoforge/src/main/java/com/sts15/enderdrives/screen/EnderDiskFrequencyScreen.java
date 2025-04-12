@@ -1,6 +1,8 @@
 package com.sts15.enderdrives.screen;
 
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.sts15.enderdrives.client.ClientConfigCache;
+import com.sts15.enderdrives.config.serverConfig;
 import com.sts15.enderdrives.items.EnderDiskItem;
 import com.sts15.enderdrives.network.NetworkHandler;
 import net.minecraft.client.Minecraft;
@@ -60,7 +62,8 @@ public class EnderDiskFrequencyScreen extends Screen {
     private static final int[] ARROW_BOTTOM_X = ARROW_TOP_X;
     private static final int ARROW_BOTTOM_Y = 63;
     private EditBox frequencyField;
-    private static final int MAX_FREQUENCY = 0xFFF;
+    private static final int MAX_FREQUENCY = ClientConfigCache.freqMax;
+    private static final int MIN_FREQUENCY = ClientConfigCache.freqMin;
     private int[] dyeIndices = new int[3];
     private int frequency;
     FrequencyScope currentScope;
@@ -74,16 +77,19 @@ public class EnderDiskFrequencyScreen extends Screen {
     public static final int TEXT_COLOR = useAltTheme ? 0xFFE44C : 0xFFFFFF;
     public static final int SHADOW_COLOR = useAltTheme ? 0x993F00 : 0xFFFFFF;
 
-    public EnderDiskFrequencyScreen(int currentFrequency, int scopeId, int transferMode) {
+    public EnderDiskFrequencyScreen(int currentFrequency, FrequencyScope scope, int transferMode) {
         super(Component.translatable("screen.enderdrives.frequency"));
         this.frequency = currentFrequency;
-        this.currentScope = FrequencyScope.fromId(scopeId);
+        this.currentScope = scope;
         this.transferMode = transferMode;
         decodeFrequency();
     }
 
     @Override
     protected void init() {
+        if (!currentScope.isEnabled()) {
+            currentScope = FrequencyScope.getDefault();
+        }
         this.leftPos = (this.width - WINDOW_WIDTH) / 2;
         this.topPos = (this.height - WINDOW_HEIGHT) / 2;
         int fieldX = leftPos + 9;
@@ -359,25 +365,35 @@ public class EnderDiskFrequencyScreen extends Screen {
     }
 
     private void updateFrequency() {
-        frequency = (dyeIndices[0] << 8) | (dyeIndices[1] << 4) | dyeIndices[2];
+        int newFreq = (dyeIndices[0] << 8) | (dyeIndices[1] << 4) | dyeIndices[2];
+        int min = serverConfig.FREQ_MIN.get();
+        int max = serverConfig.FREQ_MAX.get();
+
+        frequency = Math.max(min, Math.min(newFreq, max)); // clamp to min/max
+
         if (frequencyField != null) {
             frequencyField.setValue(String.valueOf(frequency));
         }
     }
 
+
     private void onFrequencyFieldChanged(String text) {
         try {
             int value = Integer.parseInt(text);
-            if (value < 0 || value > MAX_FREQUENCY) return;
+            if (value < MIN_FREQUENCY || value > MAX_FREQUENCY) return;
             frequency = value;
             decodeFrequency();
         } catch (NumberFormatException ignored) {}
     }
 
+
     @Override
     public void onClose() {
         super.onClose();
-        NetworkHandler.sendFrequencyUpdateToServer(frequency, currentScope.id, transferMode);
+        int min = serverConfig.FREQ_MIN.get();
+        int max = serverConfig.FREQ_MAX.get();
+        int safeFreq = Math.max(min, Math.min(frequency, max));
+        NetworkHandler.sendFrequencyUpdateToServer(safeFreq, currentScope, transferMode);
         if (currentScope == FrequencyScope.TEAM) {
             Player player = Minecraft.getInstance().player;
             if (player != null) {
@@ -394,8 +410,8 @@ public class EnderDiskFrequencyScreen extends Screen {
         return false;
     }
 
-    public static void open(int currentFreq, int scopeId, int transferMode) {
-        Minecraft.getInstance().setScreen(new EnderDiskFrequencyScreen(currentFreq, scopeId, transferMode));
+    public static void open(int currentFreq, FrequencyScope scope, int transferMode) {
+        Minecraft.getInstance().setScreen(new EnderDiskFrequencyScreen(currentFreq, scope, transferMode));
     }
 
 }

@@ -28,6 +28,7 @@ public class CreativeTabRegistry {
                 output.accept(ItemInit.ENDER_DISK_64K.get());
                 output.accept(ItemInit.ENDER_DISK_256K.get());
                 output.accept(ItemInit.ENDER_DISK_creative.get());
+                output.accept(ItemInit.TAPE_DISK.get());
             })
             .build());
 

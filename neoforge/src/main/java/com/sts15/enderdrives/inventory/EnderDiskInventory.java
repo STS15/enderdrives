@@ -42,7 +42,7 @@ public class EnderDiskInventory implements StorageCell {
     private static final ConcurrentMap<String, Object> diskLocks = new ConcurrentHashMap<>();
     private final int typeLimit;
     private final String scopePrefix;
-    private static final boolean DEBUG_LOG = false;
+    private final boolean disabled;
     private static final ForkJoinPool SHARED_PARALLEL_POOL =
             new ForkJoinPool(Math.min(4, Runtime.getRuntime().availableProcessors()));
     private static final ThreadLocal<ByteArrayOutputStream> LOCAL_BAOS =
@@ -57,10 +57,12 @@ public class EnderDiskInventory implements StorageCell {
         this.frequency = EnderDiskItem.getFrequency(stack);
         this.typeLimit = item.getTypeLimit();
         this.scopePrefix = EnderDiskItem.getSafeScopePrefix(stack);
+        this.disabled = item.isDisabled(stack);
     }
 
     @Override
     public CellState getStatus() {
+        if (disabled) return CellState.FULL;
         int typesUsed = EnderDBManager.getTypeCount(scopePrefix, frequency);
         CellState state = calculateCellState(typesUsed, typeLimit);
         return state;
@@ -76,6 +78,7 @@ public class EnderDiskInventory implements StorageCell {
 
     @Override
     public double getIdleDrain() {
+        if (disabled) return 0.0;
         long totalItems = Math.max(1, EnderDBManager.getTotalItemCount(scopePrefix, frequency));
         double base = 100;
         double exponent = 0.8;
@@ -97,6 +100,7 @@ public class EnderDiskInventory implements StorageCell {
 
     @Override
     public long insert(AEKey what, long amount, Actionable mode, IActionSource source) {
+        if (disabled) return 0;
         int transferMode = EnderDiskItem.getTransferMode(stack);
         if (transferMode == 2) {
             return 0;
@@ -156,6 +160,7 @@ public class EnderDiskInventory implements StorageCell {
 
     @Override
     public long extract(AEKey what, long amount, Actionable mode, IActionSource source) {
+        if (disabled) return 0;
         synchronized (getDiskLock()) {
             int transferMode = EnderDiskItem.getTransferMode(stack);
             if (transferMode == 1) {
@@ -206,6 +211,7 @@ public class EnderDiskInventory implements StorageCell {
 
     @Override
     public void getAvailableStacks(KeyCounter out) {
+        if (disabled) return;
         synchronized (getDiskLock()) {
             List<AEKeyCacheEntry> entries = EnderDBManager.queryItemsByFrequency(scopePrefix, frequency);
             if (entries.isEmpty()) return;
