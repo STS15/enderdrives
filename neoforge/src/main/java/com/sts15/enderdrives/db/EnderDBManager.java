@@ -22,11 +22,14 @@ public class EnderDBManager {
     private static final BlockingQueue<byte[]> walQueue = new LinkedBlockingQueue<>();
     public static final ConcurrentHashMap<AEKey, Long> deltaBuffer = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, CachedCount> itemCountCache = new ConcurrentHashMap<>();
+    private static final ConcurrentMap<String, Object> DRIVE_LOCKS = new ConcurrentHashMap<>();
+    private static final Object DELTA_BUFFER_LOCK = new Object();
     private static File dbFile, currentWAL;
     private static FileOutputStream walFileStream;
     private static DataOutputStream walWriter;
     private static final Object commitLock = new Object();
-    private static volatile boolean running = true, dirty = false;
+    public static volatile boolean running = true;
+    private static volatile boolean dirty = false;
     private static long lastCommitTime = System.currentTimeMillis();
     private static long lastDbCommitTime = System.currentTimeMillis();
     private static final AtomicLong totalItemsWritten = new AtomicLong(0);
@@ -38,7 +41,8 @@ public class EnderDBManager {
     static long minDbCommit = serverConfig.END_DB_MIN_DB_COMMIT_INTERVAL_MS.get();
     static long maxDbCommit = serverConfig.END_DB_MAX_DB_COMMIT_INTERVAL_MS.get();
     static boolean debugLog = serverConfig.END_DB_DEBUG_LOG.get();
-    private static volatile boolean isShutdown = false;
+    public static volatile boolean isShutdown = false;
+    private static Thread commitThread;
 
 // ==== Public API ====
 
@@ -74,28 +78,36 @@ public class EnderDBManager {
         if (isShutdown) return;
         isShutdown = true;
         running = false;
+
         try {
+            if (commitThread != null && commitThread.isAlive()) {
+                LOGGER.info("Waiting for EnderDB background thread to finish...");
+                commitThread.join(2000);
+            }
             synchronized (commitLock) {
                 flushDeltaBuffer();
-                commitDatabase();
+                if (!dbMap.isEmpty()) {
+                    commitDatabase();
+                }
                 truncateCurrentWAL();
                 closeWALStream();
             }
-        } catch (IOException e) {
+        } catch (IOException | InterruptedException e) {
             LOGGER.error("Exception during EnderDBManager shutdown: ", e);
+        } finally {
+            dbMap.clear();
+            deltaBuffer.clear();
+            itemCountCache.clear();
+            walQueue.clear();
+            totalItemsWritten.set(0);
+            totalCommits.set(0);
+            isShutdown = false;
+            running = true;
+            dirty = false;
+            lastCommitTime = System.currentTimeMillis();
+            lastDbCommitTime = System.currentTimeMillis();
+            LOGGER.info("[EnderDBManager] Shutdown complete and ready for re-init.");
         }
-        dbMap.clear();
-        deltaBuffer.clear();
-        itemCountCache.clear();
-        walQueue.clear();
-        totalItemsWritten.set(0);
-        totalCommits.set(0);
-        isShutdown = false;
-        running = true;
-        dirty = false;
-        lastCommitTime = System.currentTimeMillis();
-        lastDbCommitTime = System.currentTimeMillis();
-        LOGGER.info("[EnderDBManager] Shutdown complete and ready for re-init.");
     }
 
 
@@ -182,7 +194,7 @@ public class EnderDBManager {
                                 if (aeKey != null) {
                                     return new AEKeyCacheEntry(entry.getKey(), aeKey, entry.getValue().count());
                                 }
-                                return null; // skip invalids
+                                return null;
                             })
                             .filter(Objects::nonNull)
                             .toList()
@@ -252,8 +264,6 @@ public class EnderDBManager {
             File temp = new File(dbFile.getAbsolutePath() + ".tmp");
             try (DataOutputStream dos = new DataOutputStream(
                     new BufferedOutputStream(new FileOutputStream(temp), 1024 * 512))) {
-
-                // Collect entries in parallel and write sequentially
                 List<byte[]> records = parallelCall(() ->
                         dbMap.entrySet().parallelStream().map(entry -> {
                             try {
@@ -671,6 +681,25 @@ public class EnderDBManager {
     public static boolean isKnownItem(String scopePrefix, int frequency, byte[] keyBytes) {
         AEKey key = new AEKey(scopePrefix, frequency, keyBytes);
         return dbMap.containsKey(key) || deltaBuffer.containsKey(key);
+    }
+
+    public static Object getDriveLock(String scopePrefix, int frequency) {
+        return DRIVE_LOCKS.computeIfAbsent(scopePrefix + "|" + frequency, k -> new Object());
+    }
+
+    private static Object getDriveLockFromWAL(byte[] walEntry) {
+        try (DataInputStream dis = new DataInputStream(new ByteArrayInputStream(walEntry))) {
+            String scope = dis.readUTF();
+            int freq = dis.readInt();
+            return getDriveLock(scope, freq);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return new Object();
+        }
+    }
+
+    private static Object getDriveLockForAllDelta() {
+        return DELTA_BUFFER_LOCK;
     }
 
 }

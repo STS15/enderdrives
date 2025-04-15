@@ -66,7 +66,7 @@ public class TapeDiskInventory implements StorageCell {
         if (!passesFilter(itemKey)) return 0;
 
         ItemStack stackToInsert = itemKey.toStack((int) amount);
-        if (!hasMeaningfulNBT(stackToInsert)) return 0;
+        if (!isSpecialItem(stackToInsert)||!hasMeaningfulNBT(stackToInsert)) return 0;
         byte[] data = TapeDiskItem.serializeItemStackToBytes(stackToInsert);
         if (data == null || data.length == 0) return 0;
 
@@ -179,6 +179,24 @@ public class TapeDiskInventory implements StorageCell {
                         item instanceof ShieldItem ||
                         stack.getMaxStackSize() == 1;
         return isSpecial;
+    }
+
+    private boolean isSpecialItem(ItemStack stack) {
+        Item item = stack.getItem();
+        return item instanceof ArmorItem ||
+                item instanceof SwordItem ||
+                item instanceof PickaxeItem ||
+                item instanceof AxeItem ||
+                item instanceof ShovelItem ||
+                item instanceof HoeItem ||
+                item instanceof BowItem ||
+                item instanceof CrossbowItem ||
+                item instanceof TridentItem ||
+                item instanceof ShearsItem ||
+                item instanceof FlintAndSteelItem ||
+                item instanceof FishingRodItem ||
+                item instanceof ShieldItem ||
+                stack.getMaxStackSize() == 1;
     }
 
     @Override

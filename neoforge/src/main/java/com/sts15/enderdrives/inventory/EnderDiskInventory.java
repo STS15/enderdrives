@@ -26,12 +26,10 @@ import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 import java.io.*;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
-import static com.sts15.enderdrives.db.EnderDBManager.dbMap;
-import static com.sts15.enderdrives.db.EnderDBManager.deltaBuffer;
+
+import static com.sts15.enderdrives.db.EnderDBManager.*;
 
 public class EnderDiskInventory implements StorageCell {
 
@@ -39,7 +37,6 @@ public class EnderDiskInventory implements StorageCell {
     private final ItemStack stack;
     private final int frequency;
     public static final ICellHandler HANDLER = new Handler();
-    private static final ConcurrentMap<String, Object> diskLocks = new ConcurrentHashMap<>();
     private final int typeLimit;
     private final String scopePrefix;
     private final boolean disabled;
@@ -50,9 +47,10 @@ public class EnderDiskInventory implements StorageCell {
     private static final ThreadLocal<DataOutputStream> LOCAL_DOS =
             ThreadLocal.withInitial(() -> new DataOutputStream(LOCAL_BAOS.get()));
 
-
     public EnderDiskInventory(ItemStack stack) {
-        if (!(stack.getItem() instanceof EnderDiskItem item)) throw new IllegalArgumentException("Item is not an EnderDisk!");
+        if (!(stack.getItem() instanceof EnderDiskItem item)) {
+            throw new IllegalArgumentException("Item is not an EnderDisk!");
+        }
         this.stack = stack;
         this.frequency = EnderDiskItem.getFrequency(stack);
         this.typeLimit = item.getTypeLimit();
@@ -72,8 +70,7 @@ public class EnderDiskInventory implements StorageCell {
         if (typesUsed == 0) return CellState.EMPTY;
         if (typesUsed >= typeLimit) return CellState.FULL;
         float usagePercent = (float) typesUsed / typeLimit;
-        CellState result = usagePercent >= 0.75f ? CellState.TYPES_FULL : CellState.NOT_EMPTY;
-        return result;
+        return usagePercent >= 0.75f ? CellState.TYPES_FULL : CellState.NOT_EMPTY;
     }
 
     @Override
@@ -83,8 +80,7 @@ public class EnderDiskInventory implements StorageCell {
         double base = 100;
         double exponent = 0.8;
         double scale = 0.015;
-        double drain = base + (scale * Math.pow(totalItems, exponent));
-        return drain;
+        return base + (scale * Math.pow(totalItems, exponent));
     }
 
     public static CellState getCellStateForStack(ItemStack stack) {
@@ -94,8 +90,7 @@ public class EnderDiskInventory implements StorageCell {
         int freq = EnderDiskItem.getFrequency(stack);
         int typesUsed = EnderDBManager.getTypeCount(EnderDiskItem.getSafeScopePrefix(stack), freq);
         int typeLimit = enderDiskItem.getTypeLimit();
-        CellState state = calculateCellState(typesUsed, typeLimit);
-        return state;
+        return calculateCellState(typesUsed, typeLimit);
     }
 
     @Override
@@ -105,80 +100,55 @@ public class EnderDiskInventory implements StorageCell {
         if (transferMode == 2) {
             return 0;
         }
-
-        if (!(what instanceof AEItemKey itemKey)) {
+        if (!(what instanceof AEItemKey)) return 0;
+        if (!passesFilter(what)) return 0;
+        if (!running || isShutdown) {
+            debugLog("DB not ready for inserts.");
             return 0;
         }
-
-        if (!passesFilter(itemKey)) {
-            return 0;
-        }
-
-        ItemStack toInsert = itemKey.toStack();
-        byte[] serialized = serializeItemStackToBytes(toInsert);
-        if (serialized.length == 0) {
-
-            return 0;
-        }
-
-        synchronized (getDiskLock()) {
+        byte[] serialized = serializeItemStackToBytes(((AEItemKey) what).toStack());
+        if (serialized.length == 0) return 0;
+        synchronized (EnderDBManager.getDriveLock(scopePrefix, frequency)) {
             com.sts15.enderdrives.db.AEKey key = new com.sts15.enderdrives.db.AEKey(scopePrefix, frequency, serialized);
+
             boolean inDb = dbMap.containsKey(key);
             boolean inBuffer = deltaBuffer.containsKey(key);
             boolean isNewType = !(inDb || inBuffer);
-
-            if (isNewType) {
-                int committedTypes = EnderDBManager.getTypeCount(scopePrefix, frequency);
-                Set<com.sts15.enderdrives.db.AEKey> simulatedKeys = new HashSet<>(dbMap.keySet());
-                deltaBuffer.keySet().forEach(k -> {
-                    if (k.scope().equals(scopePrefix) && k.freq() == frequency) {
-                        simulatedKeys.add(k);
-                    }
-                });
-
-                simulatedKeys.add(key);
-
-                int simulatedTypeCount = 0;
-                for (com.sts15.enderdrives.db.AEKey k : simulatedKeys) {
-                    if (k.scope().equals(scopePrefix) && k.freq() == frequency) {
-                        simulatedTypeCount++;
-                    }
-                }
-
-                if (simulatedTypeCount > typeLimit) {
-                    return 0;
-                }
+            int committedTypes = EnderDBManager.getTypeCount(scopePrefix, frequency);
+            if (isNewType && committedTypes >= typeLimit) {
+                debugLog("[EnderDisk @ {}|{}] INSERT: rejected due to type limit", scopePrefix, frequency);
+                return 0;
             }
-
-            if (mode == Actionable.MODULATE) {
-                EnderDBManager.saveItem(scopePrefix, frequency, serialized, amount);
+            long currentStored = EnderDBManager.getItemCount(scopePrefix, frequency, serialized);
+            long toInsert = Math.max(0, amount);
+            if (mode == Actionable.SIMULATE) {
+                debugLog("[EnderDisk @ {}|{}] INSERT: SIMULATE OK. Would accept [{}]x", scopePrefix, frequency, toInsert);
+                return toInsert;
             }
-
-            return amount;
+            debugLog("[Insert Debug] Mode: {} | Requested: {} | Current Stored: {} | Delta Insert: {} | Source: {}", mode, amount, currentStored, toInsert, source);
+            if (toInsert <= 0) {
+                return 0;
+            }
+            EnderDBManager.saveItem(scopePrefix, frequency, serialized, toInsert);
+            debugLog("[EnderDisk @ {}|{}] INSERT: SUCCESSFUL. Added [{}]x", scopePrefix, frequency, toInsert);
+            return toInsert;
         }
     }
 
     @Override
     public long extract(AEKey what, long amount, Actionable mode, IActionSource source) {
         if (disabled) return 0;
-        synchronized (getDiskLock()) {
+        synchronized (EnderDBManager.getDriveLock(scopePrefix, frequency)) {
             int transferMode = EnderDiskItem.getTransferMode(stack);
-            if (transferMode == 1) {
-                return 0;
-            }
-            if (!(what instanceof AEItemKey itemKey)) {
-                return 0;
-            }
-            ItemStack toExtract = itemKey.toStack();
+            if (transferMode == 1) return 0;
+            if (!(what instanceof AEItemKey)) return 0;
+            ItemStack toExtract = ((AEItemKey) what).toStack();
             byte[] serialized = serializeItemStackToBytes(toExtract);
-            if (serialized.length == 0) {
-                return 0;
-            }
+            if (serialized.length == 0) return 0;
             long current = EnderDBManager.getItemCount(scopePrefix, frequency, serialized);
             long toExtractCount = Math.min(current, amount);
             if (toExtractCount > 0 && mode == Actionable.MODULATE) {
                 EnderDBManager.saveItem(scopePrefix, frequency, serialized, -toExtractCount);
-                //EnderDBManager.flushDeltaBuffer();  <-- This makes it an atomic extract, except costly ops/sec
             }
             return toExtractCount;
         }
@@ -189,13 +159,9 @@ public class EnderDiskInventory implements StorageCell {
         for (int i = 0; i < configInv.size(); i++) {
             AEKey slotKey = configInv.getKey(i);
             if (slotKey == null) continue;
-            if (slotKey.equals(key)) {
-                return true;
-            }
+            if (slotKey.equals(key)) return true;
         }
-        boolean hasAnyFilter = !configInv.keySet().isEmpty();
-        boolean result = !hasAnyFilter;
-        return result;
+        return configInv.keySet().isEmpty();
     }
 
     @Override
@@ -205,17 +171,15 @@ public class EnderDiskInventory implements StorageCell {
 
     @Override
     public Component getDescription() {
-        Component desc = Component.literal("EnderDisk @ Freq " + frequency);
-        return desc;
+        return Component.literal("EnderDisk @ Freq " + frequency);
     }
 
     @Override
     public void getAvailableStacks(KeyCounter out) {
         if (disabled) return;
-        synchronized (getDiskLock()) {
+        synchronized (EnderDBManager.getDriveLock(scopePrefix, frequency)) {
             List<AEKeyCacheEntry> entries = EnderDBManager.queryItemsByFrequency(scopePrefix, frequency);
             if (entries.isEmpty()) return;
-
             try {
                 List<KeyCounter> partials = SHARED_PARALLEL_POOL.submit(() ->
                         entries.parallelStream()
@@ -233,30 +197,25 @@ public class EnderDiskInventory implements StorageCell {
                                 .stream()
                                 .toList()
                 ).get();
-
                 for (KeyCounter partial : partials) {
                     out.addAll(partial);
                 }
-
             } catch (Exception e) {
                 e.printStackTrace();
             }
-
         }
     }
 
     @Override
     public boolean isPreferredStorageFor(AEKey what, IActionSource source) {
-        if (!(what instanceof AEItemKey itemKey)) {
-            return false;
-        }
-        byte[] serialized = serializeItemStackToBytes(itemKey.toStack());
-        if (serialized.length == 0) {
-            return false;
-        }
+        if (!(what instanceof AEItemKey)) return false;
+        if (disabled) return false;
+        byte[] serialized = serializeItemStackToBytes(((AEItemKey) what).toStack());
+        if (serialized.length == 0) return false;
         long storedCount = EnderDBManager.getItemCount(scopePrefix, frequency, serialized);
-        boolean result = storedCount > 0;
-        return result;
+        if (storedCount > 0) return true;
+        int currentTypeCount = EnderDBManager.getTypeCount(scopePrefix, frequency);
+        return currentTypeCount < typeLimit;
     }
 
     public static byte[] serializeItemStackToBytes(ItemStack stack) {
@@ -287,8 +246,7 @@ public class EnderDiskInventory implements StorageCell {
             dis.close();
             HolderLookup.Provider provider = ServerLifecycleHooks.getCurrentServer().registryAccess();
             try {
-                ItemStack stack = ItemStack.parse(provider, tag).orElse(ItemStack.EMPTY);
-                return stack;
+                return ItemStack.parse(provider, tag).orElse(ItemStack.EMPTY);
             } catch (Exception parseEx) {
                 LOGGER.error("Failed to parse ItemStack from NBT. Possibly unknown registry key: {}", parseEx.getMessage());
                 return ItemStack.EMPTY;
@@ -310,7 +268,8 @@ public class EnderDiskInventory implements StorageCell {
         }
     }
 
-    private Object getDiskLock() {
-        return diskLocks.computeIfAbsent(scopePrefix + ":" + frequency, k -> new Object());
+    private void debugLog(String message, Object... args) {
+        LOGGER.info("[EnderDisk @ {}|{}] " + message, scopePrefix, frequency, args);
     }
+
 }

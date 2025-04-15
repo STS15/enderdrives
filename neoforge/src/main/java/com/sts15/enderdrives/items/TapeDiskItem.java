@@ -31,7 +31,9 @@ import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import java.io.*;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -39,6 +41,7 @@ import static com.sts15.enderdrives.db.TapeDBManager.getByteLimit;
 
 public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem {
 
+    private static final Map<UUID, Long> lastRequest = new HashMap<>();
     private static final String TAPE_ID_KEY = "tape_disk_id";
     private final Supplier<Integer> typeLimit;
 
@@ -77,6 +80,12 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
                 .withStyle(s -> s.withColor(labelColor).withItalic(true)));
 
         if (id != null) {
+            long now = System.currentTimeMillis();
+            long last = lastRequest.getOrDefault(id, 0L);
+            if (now - last > 1000) {
+                NetworkHandler.sendToServer(id);
+                lastRequest.put(id, now);
+            }
             int typeCount = ClientTapeCache.getTypeCount(id);
             long byteCount = ClientTapeCache.getByteCount(id);
             int typeLimit = getTypeLimit(stack);
@@ -99,9 +108,7 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
             lines.add(Component.literal("Tape ID: " + id.toString().substring(0, 8))
                     .withStyle(s -> s.withColor(labelColor)));
 
-            NetworkHandler.sendToServer(id);
         } else {
-            // Use configured values instead of "??"
             int typeLimit = getTypeLimit(stack);
             long byteLimit = serverConfig.TAPE_DISK_BYTE_LIMIT.get();
 
@@ -120,7 +127,6 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
         }
 
     }
-
 
     @Nullable
     public static UUID getTapeId(ItemStack stack) {
@@ -150,7 +156,6 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
 
     @Override
     public void onCraftedBy(ItemStack stack, Level level, Player player) {
-        // Ensure each disk has a unique ID
         getOrCreateTapeId(stack);
         super.onCraftedBy(stack, level, player);
     }
@@ -209,7 +214,6 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
         }
     }
 
-
     public static ItemStack deserializeItemStackFromBytes(byte[] data) {
         if (data == null || data.length == 0) return ItemStack.EMPTY;
 
@@ -253,7 +257,4 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
             return ItemStack.EMPTY;
         }
     }
-
-
-
 }

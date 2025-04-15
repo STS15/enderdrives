@@ -52,6 +52,9 @@ public class TapeDBManager {
     }
 
     public static CompletableFuture<TapeDriveCache> loadFromDiskAsync(UUID diskId) {
+        if (executor.isShutdown() || executor.isTerminated()) {
+            init();
+        }
         return CompletableFuture.supplyAsync(() -> {
             TapeDriveCache cache = loadFromDisk(diskId);
             activeCaches.put(diskId, cache);
@@ -59,6 +62,7 @@ public class TapeDBManager {
             return cache;
         }, executor);
     }
+
 
     private static void notifyAE2StorageChanged(UUID diskId) {
         // TODO: AE2 storage refresh hook (if needed)
@@ -73,29 +77,21 @@ public class TapeDBManager {
         return Math.max(0, committed + delta);
     }
 
-    public static boolean isKnownItem(UUID diskId, byte[] itemBytes) {
-        TapeDriveCache cache = getOrLoadForRead(diskId);
-        cache.lastAccessed = System.currentTimeMillis();
-        TapeKey key = new TapeKey(itemBytes);
-        return cache.entries.containsKey(key) || cache.deltaBuffer.containsKey(key);
-    }
-
     public static int getTypeCount(UUID diskId) {
         TapeDriveCache cache = getOrLoadForRead(diskId);
         cache.lastAccessed = System.currentTimeMillis();
-        return cache.entries.size();
-    }
 
-    public static List<TapeKeyCacheEntry> readAllItems(UUID diskId) {
-        TapeDriveCache cache = getOrLoadForRead(diskId);
-        cache.lastAccessed = System.currentTimeMillis();
-        List<TapeKeyCacheEntry> list = cache.entries.entrySet().stream()
-                .map(entry -> new TapeKeyCacheEntry(
-                        entry.getKey().itemBytes(),
-                        entry.getValue().aeKey(),
-                        entry.getValue().count()))
-                .toList();
-        return list;
+        Set<TapeKey> keys = new HashSet<>();
+        keys.addAll(cache.entries.keySet());
+        keys.addAll(cache.deltaBuffer.keySet());
+
+        int count = 0;
+        for (TapeKey key : keys) {
+            long base = cache.entries.getOrDefault(key, StoredEntry.EMPTY).count();
+            long delta = cache.deltaBuffer.getOrDefault(key, 0L);
+            if (base + delta > 0) count++;
+        }
+        return count;
     }
 
     public static long getTotalStoredBytes(UUID diskId) {
@@ -129,10 +125,9 @@ public class TapeDBManager {
         return new HashSet<>(activeCaches.keySet());
     }
 
-
     public static void saveItem(UUID diskId, byte[] itemBytes, AEItemKey key, long delta) {
         TapeDriveCache cache = getCache(diskId);
-        if (cache == null) return; // do not save if not cached
+        if (cache == null) return;
 
         TapeKey tapeKey = new TapeKey(itemBytes);
         cache.lastAccessed = System.currentTimeMillis();
@@ -145,6 +140,13 @@ public class TapeDBManager {
                 log("saveItem rejected for disk %s due to byte limit (%d > %d)", diskId, estimated, getByteLimit(diskId));
                 return;
             }
+        }
+
+        long base = cache.entries.getOrDefault(tapeKey, StoredEntry.EMPTY).count();
+        long total = base + cache.deltaBuffer.getOrDefault(tapeKey, 0L);
+        if (total <= 0) {
+            cache.entries.remove(tapeKey);
+            cache.deltaBuffer.remove(tapeKey);
         }
 
         File wal = getWalFile(diskId);
