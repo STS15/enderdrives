@@ -1,6 +1,6 @@
 {
-  "parent": "minecraft:item/generated",
-  "textures": {
-    "layer0": "enderdrives:item/ender_storage_component_64k"
-  }
+    "parent": "minecraft:item/generated",
+    "textures": {
+        "layer0": "enderdrives:item/ender_storage_component_64k"
+    }
 }

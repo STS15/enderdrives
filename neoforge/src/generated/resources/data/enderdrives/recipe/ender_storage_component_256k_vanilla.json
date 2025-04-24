@@ -1,43 +1,43 @@
 {
-  "neoforge:conditions": [
-    {
-      "type": "neoforge:not",
-      "value": {
-        "type": "neoforge:mod_loaded",
-        "modid": "megacells"
-      }
+    "neoforge:conditions": [
+        {
+            "type": "neoforge:not",
+            "value": {
+                "type": "neoforge:mod_loaded",
+                "modid": "megacells"
+            }
+        },
+        {
+            "type": "neoforge:not",
+            "value": {
+                "type": "neoforge:mod_loaded",
+                "modid": "advanced_ae"
+            }
+        }
+    ],
+    "type": "minecraft:crafting_shaped",
+    "category": "misc",
+    "key": {
+        "a": {
+            "item": "ae2:singularity"
+        },
+        "b": {
+            "item": "ae2:calculation_processor"
+        },
+        "c": {
+            "item": "enderdrives:ender_storage_component_64k"
+        },
+        "d": {
+            "item": "ae2:quartz_vibrant_glass"
+        }
     },
-    {
-      "type": "neoforge:not",
-      "value": {
-        "type": "neoforge:mod_loaded",
-        "modid": "advanced_ae"
-      }
+    "pattern": [
+        "aba",
+        "cdc",
+        "aca"
+    ],
+    "result": {
+        "count": 1,
+        "id": "enderdrives:ender_storage_component_256k"
     }
-  ],
-  "type": "minecraft:crafting_shaped",
-  "category": "misc",
-  "key": {
-    "a": {
-      "item": "ae2:singularity"
-    },
-    "b": {
-      "item": "ae2:calculation_processor"
-    },
-    "c": {
-      "item": "enderdrives:ender_storage_component_64k"
-    },
-    "d": {
-      "item": "ae2:quartz_vibrant_glass"
-    }
-  },
-  "pattern": [
-    "aba",
-    "cdc",
-    "aca"
-  ],
-  "result": {
-    "count": 1,
-    "id": "enderdrives:ender_storage_component_256k"
-  }
 }

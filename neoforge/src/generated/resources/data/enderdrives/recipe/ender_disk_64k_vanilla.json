@@ -1,56 +1,56 @@
 {
-  "neoforge:conditions": [
-    {
-      "type": "neoforge:not",
-      "value": {
-        "type": "neoforge:mod_loaded",
-        "modid": "megacells"
-      }
+    "neoforge:conditions": [
+        {
+            "type": "neoforge:not",
+            "value": {
+                "type": "neoforge:mod_loaded",
+                "modid": "megacells"
+            }
+        },
+        {
+            "type": "neoforge:not",
+            "value": {
+                "type": "neoforge:mod_loaded",
+                "modid": "extendedae"
+            }
+        },
+        {
+            "type": "neoforge:not",
+            "value": {
+                "type": "neoforge:mod_loaded",
+                "modid": "advanced_ae"
+            }
+        }
+    ],
+    "type": "minecraft:crafting_shaped",
+    "category": "misc",
+    "key": {
+        "a": {
+            "item": "ae2:quartz_vibrant_glass"
+        },
+        "b": {
+            "item": "ae2:calculation_processor"
+        },
+        "c": {
+            "item": "ae2:sky_dust"
+        },
+        "d": {
+            "item": "enderdrives:ender_storage_component_64k"
+        },
+        "e": {
+            "item": "minecraft:netherite_ingot"
+        },
+        "f": {
+            "item": "minecraft:ender_chest"
+        }
     },
-    {
-      "type": "neoforge:not",
-      "value": {
-        "type": "neoforge:mod_loaded",
-        "modid": "extendedae"
-      }
-    },
-    {
-      "type": "neoforge:not",
-      "value": {
-        "type": "neoforge:mod_loaded",
-        "modid": "advanced_ae"
-      }
+    "pattern": [
+        "aba",
+        "cdc",
+        "efe"
+    ],
+    "result": {
+        "count": 1,
+        "id": "enderdrives:ender_disk_64k"
     }
-  ],
-  "type": "minecraft:crafting_shaped",
-  "category": "misc",
-  "key": {
-    "a": {
-      "item": "ae2:quartz_vibrant_glass"
-    },
-    "b": {
-      "item": "ae2:calculation_processor"
-    },
-    "c": {
-      "item": "ae2:sky_dust"
-    },
-    "d": {
-      "item": "enderdrives:ender_storage_component_64k"
-    },
-    "e": {
-      "item": "minecraft:netherite_ingot"
-    },
-    "f": {
-      "item": "minecraft:ender_chest"
-    }
-  },
-  "pattern": [
-    "aba",
-    "cdc",
-    "efe"
-  ],
-  "result": {
-    "count": 1,
-    "id": "enderdrives:ender_disk_64k"
-  }
 }
