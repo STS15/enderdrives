@@ -164,13 +164,13 @@ public class serverConfig {
         SERVER_BUILDER.comment(CATEGORY_DESC_ENDERDB).push(CATEGORY_ENDERDB);
         END_DB_MERGE_BUFFER_THRESHOLD = SERVER_BUILDER
                 .comment("Number of pending WAL entries before merging")
-                .defineInRange("merge_buffer_threshold", 1000, 1, 10_000);
+                .defineInRange("merge_buffer_threshold", 100, 1, 10_000);
         END_DB_MIN_COMMIT_INTERVAL_MS = SERVER_BUILDER
                 .comment("Minimum time (ms) between WAL commits")
-                .defineInRange("min_commit_interval_ms", 2500, 500, 60000);
+                .defineInRange("min_commit_interval_ms", 2500, 100, 60000);
         END_DB_MAX_COMMIT_INTERVAL_MS = SERVER_BUILDER
                 .comment("Maximum time (ms) between WAL commits")
-                .defineInRange("max_commit_interval_ms", 60000, 500, 60000);
+                .defineInRange("max_commit_interval_ms", 5000, 500, 60000);
         END_DB_MIN_DB_COMMIT_INTERVAL_MS = SERVER_BUILDER
                 .comment("Minimum time (ms) between DB flush commits")
                 .defineInRange("min_db_commit_interval_ms", 5000, 500, 60000);

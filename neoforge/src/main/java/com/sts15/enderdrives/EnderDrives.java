@@ -73,11 +73,7 @@ public class EnderDrives {
 
     @SubscribeEvent
     public void onWorldLoad(LevelEvent.Load event) {
-        if (!event.getLevel().isClientSide() && event.getLevel() instanceof ServerLevel) {
-            if (isDatabaseActive) {
-                EnderDBManager.shutdown();
-                TapeDBManager.shutdown();
-            }
+        if (!event.getLevel().isClientSide() && event.getLevel() instanceof ServerLevel && !isDatabaseActive) {
             EnderDBManager.init();
             TapeDBManager.init();
             isDatabaseActive = true;
@@ -179,7 +175,6 @@ public class EnderDrives {
                                 return 0x00FF00;                             // Green
                             }
                         }
-
                         return 0xFFFFFFFF;
                     },
                     ItemInit.ENDER_DISK_1K.get(), ItemInit.ENDER_DISK_4K.get(),
@@ -188,8 +183,6 @@ public class EnderDrives {
                     ItemInit.TAPE_DISK.get()
             );
         }
-
-
     }
 
     public static ResourceLocation id(String id) {

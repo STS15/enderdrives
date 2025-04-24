@@ -27,7 +27,6 @@ import static com.sts15.enderdrives.db.TapeDBManager.*;
 public class TapeDiskInventory implements StorageCell {
 
     private static final Logger LOGGER = LogManager.getLogger("EnderDrives");
-    private static final boolean debug_log = false;
     public static final ICellHandler HANDLER = new Handler();
     private final boolean disabled;
     private final ItemStack stack;
@@ -212,6 +211,7 @@ public class TapeDiskInventory implements StorageCell {
         CompoundTag filtered = tag.copy();
         filtered.remove("count");
         filtered.remove("id");
+        filtered.remove("damage");
         filtered.remove("repairCost");
         filtered.remove("unbreakable");
         if (filtered.contains("tag") && filtered.getCompound("tag").isEmpty()) {

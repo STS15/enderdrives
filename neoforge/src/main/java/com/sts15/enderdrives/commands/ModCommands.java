@@ -4,9 +4,7 @@ import appeng.api.stacks.AEItemKey;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
-import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.sts15.enderdrives.config.serverConfig;
-import com.sts15.enderdrives.db.AEKeyCacheEntry;
 import com.sts15.enderdrives.db.EnderDBManager;
 import com.sts15.enderdrives.db.TapeDBManager;
 import com.sts15.enderdrives.inventory.EnderDiskInventory;
@@ -14,13 +12,11 @@ import com.sts15.enderdrives.items.EnderDiskItem;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Level;
 
 import java.io.*;
@@ -115,7 +111,6 @@ public class ModCommands {
                                     CommandSourceStack source = ctx.getSource();
                                     source.sendSuccess(() -> Component.literal(
                                             "EnderDB Stats:\n" +
-                                                    " - WAL Queue: " + EnderDBManager.getWalQueueSize() + "\n" +
                                                     " - DB Entries: " + EnderDBManager.getDatabaseSize() + "\n" +
                                                     " - Items Written: " + EnderDBManager.getTotalItemsWritten() + "\n" +
                                                     " - Commits: " + EnderDBManager.getTotalCommits() + "\n" +

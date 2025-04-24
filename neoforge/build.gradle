@@ -84,6 +84,9 @@ dependencies {
     implementation "org.appliedenergistics:appliedenergistics2:19.2.2-beta"
     implementation "org.appliedenergistics:guideme:2.5.1"
 
+    compileOnly "curse.maven:glodium-957920:5821676"
+    compileOnly "curse.maven:extendedae-892005:6436226"
+
     compileOnly "dev.latvian.mods:kubejs-neoforge:2101.7.0-build.171"
 
     compileOnly "dev.architectury:architectury-neoforge:${architectury_api_version}"
@@ -161,6 +164,13 @@ neoForge {
         "${mod_id}" {
             sourceSet sourceSets.main
         }
+    }
+}
+
+processResources {
+    inputs.property "version", project.version
+    filesMatching("**/*.properties") {
+        expand "version": project.version
     }
 }
 

@@ -49,7 +49,4 @@ public class NetworkHandler {
         PacketDistributor.sendToServer(new RequestTapeTypeCountPacket(id.getMostSignificantBits(), id.getLeastSignificantBits()));
     }
 
-
-
-
 }
