@@ -1,0 +1,30 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "advanced_ae"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "a": {
+      "item": "advanced_ae:shattered_singularity"
+    },
+    "b": {
+      "item": "minecraft:ender_pearl"
+    },
+    "c": {
+      "item": "advanced_ae:quantum_storage_component"
+    }
+  },
+  "pattern": [
+    "aba",
+    "bcb",
+    "aba"
+  ],
+  "result": {
+    "count": 1,
+    "id": "enderdrives:ender_storage_component_1k"
+  }
+}

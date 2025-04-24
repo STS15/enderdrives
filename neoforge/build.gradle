@@ -81,11 +81,14 @@ repositories {
 
 dependencies {
 
-    implementation "org.appliedenergistics:appliedenergistics2:19.2.2-beta"
+    implementation "org.appliedenergistics:appliedenergistics2:${ae2_version}"
     implementation "org.appliedenergistics:guideme:2.5.1"
 
-    compileOnly "curse.maven:glodium-957920:5821676"
-    compileOnly "curse.maven:extendedae-892005:6436226"
+    implementation "curse.maven:glodium-957920:5821676"
+    implementation "curse.maven:extendedae-892005:6436226"
+    implementation "curse.maven:mega-cells-622112:6329073"
+    implementation "curse.maven:geckolib-388172:6304958"
+    implementation "curse.maven:advancedae-1084104:6225993"
 
     compileOnly "dev.latvian.mods:kubejs-neoforge:2101.7.0-build.171"
 
@@ -172,6 +175,7 @@ processResources {
     filesMatching("**/*.properties") {
         expand "version": project.version
     }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }
