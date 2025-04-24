@@ -1,0 +1,27 @@
+{
+  "parent": "minecraft:item/generated",
+  "overrides": [
+    {
+      "model": "enderdrives:item/tape_disk_blue",
+      "predicate": {
+        "enderdrives:status": 1.0
+      }
+    },
+    {
+      "model": "enderdrives:item/tape_disk_yellow",
+      "predicate": {
+        "enderdrives:status": 2.0
+      }
+    },
+    {
+      "model": "enderdrives:item/tape_disk_red",
+      "predicate": {
+        "enderdrives:status": 3.0
+      }
+    }
+  ],
+  "textures": {
+    "layer0": "enderdrives:item/tape_disk",
+    "layer1": "enderdrives:item/ender_disk_led_green"
+  }
+}
