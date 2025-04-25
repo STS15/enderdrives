@@ -22,7 +22,6 @@ public class EnderDBManager {
     private static final Logger LOGGER = LogManager.getLogger("EnderDrives");
     public static final ConcurrentSkipListMap<AEKey, StoredEntry> dbMap = new ConcurrentSkipListMap<>();
     private static final BlockingQueue<byte[]> walQueue = new LinkedBlockingQueue<>();
-    public static final ConcurrentHashMap<AEKey, Long> deltaBuffer = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, CachedCount> itemCountCache = new ConcurrentHashMap<>();
     private static File dbFile, currentWAL;
     private static FileOutputStream walFileStream;
@@ -69,7 +68,6 @@ public class EnderDBManager {
 
     public static void clearRAMCaches() {
         synchronized (commitLock) {
-            deltaBuffer.clear();
             dbMap.clear();
         }
         itemCountCache.clear();
@@ -81,7 +79,6 @@ public class EnderDBManager {
         running = false;
 
         synchronized (commitLock) {
-            flushDeltaBuffer();
             flushWALQueue();
             if (!dbMap.isEmpty()) {
                 commitDatabase();
@@ -112,12 +109,37 @@ public class EnderDBManager {
      */
     public static void saveItem(String scopePrefix, int freq, byte[] itemBytes, long deltaCount) {
         AEKey key = new AEKey(scopePrefix, freq, itemBytes);
-        deltaBuffer.merge(key, deltaCount, Long::sum);
 
-        if (deltaBuffer.size() >= MERGE_BUFFER_THRESHOLD) {
-            flushDeltaBuffer();
+        synchronized (commitLock) {
+            dbMap.compute(key, (k, existing) -> {
+                long newCount = (existing == null ? 0L : existing.count()) + deltaCount;
+                if (newCount <= 0) return null;
+
+                AEItemKey aeKey = null;
+                try {
+                    ItemStack s = deserializeItemStackFromBytes(itemBytes);
+                    if (!s.isEmpty()) aeKey = AEItemKey.of(s);
+                } catch (Exception ignored) {}
+
+                return new StoredEntry(newCount, aeKey);
+            });
+
+            try (var baos = new ByteArrayOutputStream();
+                 var dos = new DataOutputStream(baos)) {
+                dos.writeUTF(scopePrefix);
+                dos.writeInt(freq);
+                dos.writeInt(itemBytes.length);
+                dos.write(itemBytes);
+                dos.writeLong(deltaCount);
+                walQueue.add(baos.toByteArray());
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            dirty = true;
         }
     }
+
 
     /**
      * Retrieves the stored count of an item in the database.
@@ -129,51 +151,33 @@ public class EnderDBManager {
      */
     public static long getItemCount(String scopePrefix, int freq, byte[] keyBytes) {
         AEKey key = new AEKey(scopePrefix, freq, keyBytes);
-        long committed = dbMap.getOrDefault(key, new StoredEntry(0L, null)).count();
-        long pending = deltaBuffer.getOrDefault(key, 0L);
-        return committed + pending;
+        return dbMap.getOrDefault(key, new StoredEntry(0L, null)).count();
     }
+
 
     /**
      * Like getTypeCount, but also counts any keys still sitting in deltaBuffer
      */
     public static int getTypeCountInclusive(String scope, int freq) {
-        // grab committed keys
         AEKey from = new AEKey(scope, freq, new byte[0]);
         AEKey to   = new AEKey(scope, freq + 1, new byte[0]);
-        Set<AEKey> allKeys = new HashSet<>(dbMap.subMap(from, true, to, false).keySet());
-        // merge in any pending buffer keys with non-zero delta
-        for (Map.Entry<AEKey, Long> e : deltaBuffer.entrySet()) {
-            AEKey k = e.getKey();
-            if (k.scope().equals(scope)
-                    && k.freq() == freq
-                    && e.getValue() != 0L) {
-                allKeys.add(k);
-            }
-        }
-        return allKeys.size();
+        return dbMap.subMap(from, true, to, false).size();
     }
+
 
     /**
      * Like getTotalItemCount, but sums committed + pending
      */
     public static long getTotalItemCountInclusive(String scope, int freq) {
         long total = 0L;
-        // first sum up committed count
         AEKey from = new AEKey(scope, freq, new byte[0]);
         AEKey to   = new AEKey(scope, freq + 1, new byte[0]);
         for (Map.Entry<AEKey, StoredEntry> e : dbMap.subMap(from, true, to, false).entrySet()) {
             total += e.getValue().count();
         }
-        // then add any pending deltaBuffer entries
-        for (Map.Entry<AEKey, Long> e : deltaBuffer.entrySet()) {
-            AEKey k = e.getKey();
-            if (k.scope().equals(scope) && k.freq() == freq) {
-                total += e.getValue();
-            }
-        }
         return total;
     }
+
 
     /**
      * Clears all entries for a given frequency and scope.
@@ -209,31 +213,20 @@ public class EnderDBManager {
     public static List<AEKeyCacheEntry> queryItemsByFrequency(String scopePrefix, int freq) {
         AEKey lo = new AEKey(scopePrefix, freq,   new byte[0]);
         AEKey hi = new AEKey(scopePrefix, freq+1, new byte[0]);
-        NavigableMap<AEKey,StoredEntry> committed = dbMap.subMap(lo, true, hi, false);
-
-        Map<AEKey,Long> merged = new HashMap<>();
-        committed.forEach((k,v)->merged.put(k, v.count()));
-        deltaBuffer.forEach((k,d)->{
-            if (k.scope().equals(scopePrefix)&&k.freq()==freq) {
-                merged.merge(k, d, Long::sum);
-            }
-        });
+        NavigableMap<AEKey, StoredEntry> committed = dbMap.subMap(lo, true, hi, false);
 
         List<AEKeyCacheEntry> result = new ArrayList<>();
-        for (var e : merged.entrySet()) {
-            long cnt = e.getValue();
+        for (var e : committed.entrySet()) {
+            long cnt = e.getValue().count();
             if (cnt <= 0) continue;
             AEKey k = e.getKey();
-            AEItemKey aek = committed.containsKey(k)
-                    ? committed.get(k).aeKey()
-                    : AEItemKey.of(deserializeItemStackFromBytes(k.itemBytes()));
+            AEItemKey aek = e.getValue().aeKey();
             if (aek != null) {
                 result.add(new AEKeyCacheEntry(k, aek, cnt));
             }
         }
         return result;
     }
-
 
     public static long getTotalItemCount(String scopePrefix, int frequency) {
         String key = scopePrefix + "|" + frequency;
@@ -358,12 +351,6 @@ public class EnderDBManager {
 
                 while (running) {
                     try {
-                        //if (DEBUG_LOG) LOGGER.info("[EnderDB] Commit loop tick. WAL queue size = {}", walQueue.size());
-                        // Flush deltas into WAL queue
-                        if (!deltaBuffer.isEmpty()) {
-                            flushDeltaBuffer();
-                        }
-
                         long now = System.currentTimeMillis();
                         int queueSize = walQueue.size();
 
@@ -428,46 +415,6 @@ public class EnderDBManager {
 // ==== WAL Handling & Processing ====
 
     /**
-     * Flushes the delta buffer into the WAL queue, preparing it for commit.
-     */
-    public static void flushDeltaBuffer() {
-        if (deltaBuffer.isEmpty()) {
-            return;
-        }
-
-        List<Map.Entry<AEKey,Long>> snapshot = new ArrayList<>(deltaBuffer.entrySet());
-        deltaBuffer.clear();
-        log("[flushDeltaBuffer]: snapshot size={}", snapshot.size());
-
-        List<byte[]> entries = new ArrayList<>(snapshot.size());
-        for (var entry : snapshot) {
-            long delta = entry.getValue();
-            if (delta == 0) continue;
-            try (var baos = new ByteArrayOutputStream();
-                 var dos  = new DataOutputStream(baos)) {
-
-                AEKey key = entry.getKey();
-                dos.writeUTF(key.scope());
-                dos.writeInt(key.freq());
-                dos.writeInt(key.itemBytes().length);
-                dos.write(key.itemBytes());
-                dos.writeLong(delta);
-                entries.add(baos.toByteArray());
-
-            } catch (IOException ex) {
-                log("[flushDeltaBuffer]: failed to serialize delta for key={}, skipping", entry.getKey(), ex);
-            }
-        }
-        log("[flushDeltaBuffer]: serialized {} entries", entries.size());
-
-        for (var rec : entries) {
-            walQueue.add(rec);
-            applyBinaryOperation(rec);
-        }
-        log("[flushDeltaBuffer]: walQueue size now={}", walQueue.size());
-    }
-
-    /**
      * Applies a binary WAL entry to the in-memory database map.
      *
      * @param data Serialized WAL operation.
@@ -522,7 +469,7 @@ public class EnderDBManager {
         }
     }
 
-    private static void flushWALQueue() {
+    public static void flushWALQueue() {
         if (walQueue.isEmpty()) return;
         try {
             log("[FlushWALQueue] Flushing WAL queue with {} entries on shutdown", walQueue.size());
@@ -729,15 +676,6 @@ public class EnderDBManager {
             e.printStackTrace();
             return fallback;
         }
-    }
-
-    public static boolean isKnownItem(String scopePrefix, int frequency, byte[] keyBytes) {
-        AEKey key = new AEKey(scopePrefix, frequency, keyBytes);
-        return dbMap.containsKey(key) || deltaBuffer.containsKey(key);
-    }
-
-    private static boolean isVersionDifferent(String fileVer, String currentVer) {
-        return fileVer != null && currentVer != null && !fileVer.equals(currentVer);
     }
 
     private static void backupDatabaseFile(String version) {

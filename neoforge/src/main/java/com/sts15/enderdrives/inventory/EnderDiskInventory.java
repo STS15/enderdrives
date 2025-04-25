@@ -236,8 +236,12 @@ public class EnderDiskInventory implements StorageCell {
         } catch (IOException e) { return ItemStack.EMPTY; }
     }
 
+    public ItemStack getContainerItem() {
+        return this.stack;
+    }
+
     private static void log(String format, Object... args) {
-        if (DEBUG_LOG) System.out.printf("[EnderDiskInventory] " + format + "%n", args);
+        if (DEBUG_LOG) LOGGER.info("[EnderDiskInventory] " + format + "%n", args);
     }
 
     private static class Handler implements ICellHandler {

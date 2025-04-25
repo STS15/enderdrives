@@ -72,21 +72,15 @@ public class EnderDrives {
     }
 
     @SubscribeEvent
-    public void onWorldLoad(LevelEvent.Load event) {
-        if (!event.getLevel().isClientSide() && event.getLevel() instanceof ServerLevel && !isDatabaseActive) {
-            EnderDBManager.init();
-            TapeDBManager.init();
-            isDatabaseActive = true;
-        }
+    public void onServerStart(net.neoforged.neoforge.event.server.ServerStartingEvent e) {
+        EnderDBManager.init();
+        TapeDBManager.init();
     }
 
     @SubscribeEvent
-    public void onWorldUnload(LevelEvent.Unload event) {
-        if (!event.getLevel().isClientSide() && isDatabaseActive) {
-            EnderDBManager.shutdown();
-            TapeDBManager.shutdown();
-            isDatabaseActive = false;
-        }
+    public void onServerStop(net.neoforged.neoforge.event.server.ServerStoppingEvent e) {
+        EnderDBManager.shutdown();
+        TapeDBManager.shutdown();
     }
 
     @SubscribeEvent

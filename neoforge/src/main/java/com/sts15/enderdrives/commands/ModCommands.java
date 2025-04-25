@@ -1,10 +1,16 @@
 package com.sts15.enderdrives.commands;
 
+import appeng.api.config.Actionable;
 import appeng.api.stacks.AEItemKey;
+import appeng.api.storage.StorageCells;
+import appeng.core.definitions.AEItems;
+import appeng.me.cells.BasicCellInventory;
+import appeng.me.helpers.BaseActionSource;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.sts15.enderdrives.config.serverConfig;
+import com.sts15.enderdrives.db.AEKeyCacheEntry;
 import com.sts15.enderdrives.db.EnderDBManager;
 import com.sts15.enderdrives.db.TapeDBManager;
 import com.sts15.enderdrives.inventory.EnderDiskInventory;
@@ -182,7 +188,6 @@ public class ModCommands {
                                                             EnderDBManager.saveItem(scopePrefix, frequency, serialized, 1);
                                                         }
                                                         long insertEnd = System.currentTimeMillis();
-                                                        EnderDBManager.flushDeltaBuffer();
                                                         Thread.sleep(serverConfig.AUTO_BENCHMARK_MS_SLEEP.get());
 
                                                         long[] tickTimes = server.getTickTime(Level.OVERWORLD);
@@ -285,6 +290,105 @@ public class ModCommands {
                                                 })
                                         ))
                         )
+                        .then(Commands.literal("dumpcell")
+                                .then(Commands.argument("type", StringArgumentType.word())
+                                        .suggests((ctx, builder) -> {
+                                            builder.suggest("private");
+                                            builder.suggest("team");
+                                            builder.suggest("global");
+                                            return builder.buildFuture();
+                                        })
+                                        .then(Commands.argument("frequency", IntegerArgumentType.integer(0, 4095))
+                                                .executes(ctx -> {
+                                                    CommandSourceStack source = ctx.getSource();
+                                                    ServerPlayer player = source.getPlayerOrException();
+                                                    int frequency = IntegerArgumentType.getInteger(ctx, "frequency");
+                                                    if (!validateFrequency(frequency, source)) return 0;
+
+                                                    String type = StringArgumentType.getString(ctx, "type").toLowerCase();
+                                                    UUID playerId = player.getUUID();
+                                                    String scopePrefix;
+
+                                                    switch (type) {
+                                                        case "private" -> scopePrefix = "player_" + playerId;
+                                                        case "team" -> scopePrefix = "team_" + playerId;
+                                                        case "global" -> {
+                                                            if (!source.hasPermission(4)) {
+                                                                source.sendFailure(Component.literal("§cYou must be a server operator to dump global channels."));
+                                                                return 0;
+                                                            }
+                                                            scopePrefix = "global";
+                                                        }
+                                                        default -> {
+                                                            source.sendFailure(Component.literal("§cInvalid channel type. Use 'private', 'team', or 'global'."));
+                                                            return 0;
+                                                        }
+                                                    }
+
+                                                    List<AEKeyCacheEntry> entries = EnderDBManager.queryItemsByFrequency(scopePrefix, frequency);
+
+                                                    if (entries.isEmpty()) {
+                                                        source.sendFailure(Component.literal("§cNo items found in frequency " + frequency + "."));
+                                                        return 0;
+                                                    }
+
+                                                    List<ItemStack> createdCells = new ArrayList<>();
+                                                    ItemStack currentCell = null;
+                                                    BasicCellInventory handler = null;
+
+                                                    long totalInserted = 0;
+
+                                                    for (AEKeyCacheEntry entry : entries) {
+                                                        AEItemKey key = entry.aeKey();
+                                                        long remaining = entry.count();
+
+                                                        while (remaining > 0) {
+                                                            if (handler == null) {
+                                                                currentCell = new ItemStack(AEItems.ITEM_CELL_256K.get());
+                                                                var inventory = StorageCells.getCellInventory(currentCell, null);
+
+                                                                if (!(inventory instanceof BasicCellInventory h)) {
+                                                                    source.sendFailure(Component.literal("§cFailed to access 256k storage cell."));
+                                                                    return 0;
+                                                                }
+
+                                                                handler = h;
+                                                                createdCells.add(currentCell);
+                                                                int currentDriveIndex = createdCells.size();
+                                                                String prettyType = type.substring(0, 1).toUpperCase() + type.substring(1);
+                                                                Component customName = Component.literal("EnderDrives " + prettyType + ":" + frequency + " Drive:" + currentDriveIndex);
+                                                                currentCell.set(DataComponents.CUSTOM_NAME, customName);
+
+                                                            }
+
+                                                            long insertAmount = Math.min(remaining, Integer.MAX_VALUE);
+                                                            long inserted = handler.insert(key, insertAmount, Actionable.MODULATE, new BaseActionSource());
+
+                                                            if (inserted <= 0) {
+                                                                handler = null;
+                                                                continue;
+                                                            }
+
+                                                            remaining -= inserted;
+                                                            totalInserted += inserted;
+                                                        }
+                                                    }
+
+
+                                                    for (ItemStack c : createdCells) {
+                                                        player.getInventory().placeItemBackInInventory(c);
+                                                    }
+
+                                                    long finalTotalInserted = totalInserted;
+                                                    source.sendSuccess(() -> Component.literal("§a✔ Dumped §e" + finalTotalInserted + "§a items into §b" + createdCells.size() + "§a 256k drive(s)."), true);
+                                                    source.sendSuccess(() -> Component.literal("§a✔ If drive creation was successful, you can run clear on that frequency now."), true);
+                                                    return 1;
+                                                })
+                                        )
+                                )
+                        )
+
+
                         .then(Commands.literal("tape")
                                 .then(Commands.literal("release")
                                         .then(Commands.argument("uuid", StringArgumentType.string())

@@ -43,7 +43,6 @@ public class RequestDiskTypeCountPacket implements CustomPacketPayload {
     public static void handle(RequestDiskTypeCountPacket packet, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player) {
-                EnderDBManager.flushDeltaBuffer();
                 int typeCount = EnderDBManager.getTypeCountInclusive(packet.scopePrefix, packet.frequency);
                 long totalCount = EnderDBManager.getTotalItemCountInclusive(packet.scopePrefix, packet.frequency);
                 List<ItemStack> topStacks = EnderDBManager.getTopStacks(packet.scopePrefix, packet.frequency, 5);
