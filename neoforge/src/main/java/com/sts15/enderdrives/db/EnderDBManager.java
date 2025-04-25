@@ -13,6 +13,8 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.zip.CRC32;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import static com.sts15.enderdrives.inventory.EnderDiskInventory.deserializeItemStackFromBytes;
 
 public class EnderDBManager {
@@ -20,113 +22,124 @@ public class EnderDBManager {
     private static final Logger LOGGER = LogManager.getLogger("EnderDrives");
     public static final ConcurrentSkipListMap<AEKey, StoredEntry> dbMap = new ConcurrentSkipListMap<>();
     private static final BlockingQueue<byte[]> walQueue = new LinkedBlockingQueue<>();
-    public static final ConcurrentHashMap<AEKey, Long> deltaBuffer = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<String, CachedCount> itemCountCache = new ConcurrentHashMap<>();
-    private static final ConcurrentMap<String, Object> DRIVE_LOCKS = new ConcurrentHashMap<>();
-    private static final Object DELTA_BUFFER_LOCK = new Object();
     private static File dbFile, currentWAL;
     private static FileOutputStream walFileStream;
     private static DataOutputStream walWriter;
     private static final Object commitLock = new Object();
-    public static volatile boolean running = true;
-    private static volatile boolean dirty = false;
-    private static long lastCommitTime = System.currentTimeMillis();
-    private static long lastDbCommitTime = System.currentTimeMillis();
+    public static volatile boolean running = true, dirty = false;
+    private static Thread commitThread = null;
     private static final AtomicLong totalItemsWritten = new AtomicLong(0);
     private static final AtomicLong totalCommits = new AtomicLong(0);
     private static final ForkJoinPool SHARED_PARALLEL_POOL = new ForkJoinPool(Math.min(4, Runtime.getRuntime().availableProcessors()));
-    static int mergeThreshold = serverConfig.END_DB_MERGE_BUFFER_THRESHOLD.get();
-    static long minCommit = serverConfig.END_DB_MIN_COMMIT_INTERVAL_MS.get();
-    static long maxCommit = serverConfig.END_DB_MAX_COMMIT_INTERVAL_MS.get();
-    static long minDbCommit = serverConfig.END_DB_MIN_DB_COMMIT_INTERVAL_MS.get();
-    static long maxDbCommit = serverConfig.END_DB_MAX_DB_COMMIT_INTERVAL_MS.get();
-    static boolean debugLog = serverConfig.END_DB_DEBUG_LOG.get();
-    public static volatile boolean isShutdown = false;
-    private static Thread commitThread;
+    private static final int MERGE_BUFFER_THRESHOLD   = serverConfig.END_DB_MERGE_BUFFER_THRESHOLD.get();
+    private static final long MIN_WAL_COMMIT_MS       = serverConfig.END_DB_MIN_COMMIT_INTERVAL_MS.get();
+    private static final long MAX_WAL_COMMIT_MS       = serverConfig.END_DB_MAX_COMMIT_INTERVAL_MS.get();
+    private static final long MIN_DB_COMMIT_MS        = serverConfig.END_DB_MIN_DB_COMMIT_INTERVAL_MS.get();
+    private static final long MAX_DB_COMMIT_MS        = serverConfig.END_DB_MAX_DB_COMMIT_INTERVAL_MS.get();
+    private static final boolean DEBUG_LOG            = serverConfig.END_DB_DEBUG_LOG.get();
+    private static long lastWalCommitTime = System.currentTimeMillis();
+    private static long lastDbCommitTime  = System.currentTimeMillis();
 
 // ==== Public API ====
 
-    /**
-     * Initializes the EnderDB system, loading the database and replaying WAL logs.
-     * Sets up the background commit thread and registers a shutdown hook.
-     */
     public static void init() {
         try {
             Path worldDir = ServerLifecycleHooks.getCurrentServer()
-                    .getWorldPath(LevelResource.ROOT).resolve("data").resolve("enderdrives");
+                    .getWorldPath(LevelResource.ROOT)
+                    .resolve("data").resolve("enderdrives");
             Files.createDirectories(worldDir);
+
             dbFile = worldDir.resolve("enderdrives.bin").toFile();
             currentWAL = worldDir.resolve("enderdrives.wal").toFile();
+
             migrateOldRecords();
-            openWALStream();
-            replayWALs();
             loadDatabase();
+            replayWALs();
+            openWALStream();
             startBackgroundCommit();
-            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                LOGGER.info("Shutdown hook triggered.");
-                shutdown();
-            }));
+
+            Runtime.getRuntime().addShutdownHook(new Thread(EnderDBManager::shutdown));
+
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    /**
-     * Shuts down the EnderDB system gracefully by flushing buffers, committing data, and closing WAL streams.
-     */
-    public static void shutdown() {
-        if (isShutdown) return;
-        isShutdown = true;
-        running = false;
-
-        try {
-            if (commitThread != null && commitThread.isAlive()) {
-                LOGGER.info("Waiting for EnderDB background thread to finish...");
-                commitThread.join(2000);
-            }
-            synchronized (commitLock) {
-                flushDeltaBuffer();
-                if (!dbMap.isEmpty()) {
-                    commitDatabase();
-                }
-                truncateCurrentWAL();
-                closeWALStream();
-            }
-        } catch (IOException | InterruptedException e) {
-            LOGGER.error("Exception during EnderDBManager shutdown: ", e);
-        } finally {
+    public static void clearRAMCaches() {
+        synchronized (commitLock) {
             dbMap.clear();
-            deltaBuffer.clear();
-            itemCountCache.clear();
-            walQueue.clear();
-            totalItemsWritten.set(0);
-            totalCommits.set(0);
-            isShutdown = false;
-            running = true;
-            dirty = false;
-            lastCommitTime = System.currentTimeMillis();
-            lastDbCommitTime = System.currentTimeMillis();
-            LOGGER.info("[EnderDBManager] Shutdown complete and ready for re-init.");
         }
+        itemCountCache.clear();
+
+        log("[clearRAMCaches] RAM caches cleared successfully.");
     }
 
+    public static void shutdown() {
+        running = false;
+
+        synchronized (commitLock) {
+            flushWALQueue();
+            if (!dbMap.isEmpty()) {
+                commitDatabase();
+            }
+            truncateCurrentWAL();
+            try {
+                closeWALStream();
+            } catch (IOException ignored) {}
+            clearRAMCaches();
+        }
+
+        if (commitThread != null) {
+            try {
+                commitThread.join(500);
+            } catch (InterruptedException ignored) {}
+            commitThread = null;
+        }
+
+    }
 
     /**
      * Saves an item delta into the database, merging counts by item key.
      *
      * @param scopePrefix The scope name (e.g. player or global).
      * @param freq        The frequency ID associated with the item.
-     * @param itemNbtBinary Serialized ItemStack data.
+     * @param itemBytes Serialized ItemStack data.
      * @param deltaCount  The count delta to apply (positive or negative).
      */
-    public static void saveItem(String scopePrefix, int freq, byte[] itemNbtBinary, long deltaCount) {
-        AEKey key = new AEKey(scopePrefix, freq, itemNbtBinary);
-        deltaBuffer.merge(key, deltaCount, Long::sum);
+    public static void saveItem(String scopePrefix, int freq, byte[] itemBytes, long deltaCount) {
+        AEKey key = new AEKey(scopePrefix, freq, itemBytes);
 
-        if (deltaBuffer.size() >= mergeThreshold ) {
-            flushDeltaBuffer();
+        synchronized (commitLock) {
+            dbMap.compute(key, (k, existing) -> {
+                long newCount = (existing == null ? 0L : existing.count()) + deltaCount;
+                if (newCount <= 0) return null;
+
+                AEItemKey aeKey = null;
+                try {
+                    ItemStack s = deserializeItemStackFromBytes(itemBytes);
+                    if (!s.isEmpty()) aeKey = AEItemKey.of(s);
+                } catch (Exception ignored) {}
+
+                return new StoredEntry(newCount, aeKey);
+            });
+
+            try (var baos = new ByteArrayOutputStream();
+                 var dos = new DataOutputStream(baos)) {
+                dos.writeUTF(scopePrefix);
+                dos.writeInt(freq);
+                dos.writeInt(itemBytes.length);
+                dos.write(itemBytes);
+                dos.writeLong(deltaCount);
+                walQueue.add(baos.toByteArray());
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            dirty = true;
         }
     }
+
 
     /**
      * Retrieves the stored count of an item in the database.
@@ -138,9 +151,31 @@ public class EnderDBManager {
      */
     public static long getItemCount(String scopePrefix, int freq, byte[] keyBytes) {
         AEKey key = new AEKey(scopePrefix, freq, keyBytes);
-        long committed = dbMap.getOrDefault(key, new StoredEntry(0L, null)).count();
-        long pending = deltaBuffer.getOrDefault(key, 0L);
-        return committed + pending;
+        return dbMap.getOrDefault(key, new StoredEntry(0L, null)).count();
+    }
+
+
+    /**
+     * Like getTypeCount, but also counts any keys still sitting in deltaBuffer
+     */
+    public static int getTypeCountInclusive(String scope, int freq) {
+        AEKey from = new AEKey(scope, freq, new byte[0]);
+        AEKey to   = new AEKey(scope, freq + 1, new byte[0]);
+        return dbMap.subMap(from, true, to, false).size();
+    }
+
+
+    /**
+     * Like getTotalItemCount, but sums committed + pending
+     */
+    public static long getTotalItemCountInclusive(String scope, int freq) {
+        long total = 0L;
+        AEKey from = new AEKey(scope, freq, new byte[0]);
+        AEKey to   = new AEKey(scope, freq + 1, new byte[0]);
+        for (Map.Entry<AEKey, StoredEntry> e : dbMap.subMap(from, true, to, false).entrySet()) {
+            total += e.getValue().count();
+        }
+        return total;
     }
 
 
@@ -156,7 +191,7 @@ public class EnderDBManager {
         NavigableMap<AEKey, StoredEntry> sub = dbMap.subMap(from, true, to, false);
         int removed = sub.size();
         sub.clear();
-        log("Cleared frequency %d for scope %s (%d entries)", frequency, scopePrefix, removed);
+        log("[clearFrequency] Cleared frequency %d for scope %s (%d entries)", frequency, scopePrefix, removed);
     }
 
     /**
@@ -173,38 +208,25 @@ public class EnderDBManager {
     }
 
     /**
-     * Queries all items under a given frequency and scope, returning their keys and counts.
-     *
-     * @param scopePrefix The scope name.
-     * @param freq        The frequency ID.
-     * @return A list of matching cache entries.
+     * Queries all items for a scope/freq, merging committed + pending.
      */
     public static List<AEKeyCacheEntry> queryItemsByFrequency(String scopePrefix, int freq) {
-        AEKey from = new AEKey(scopePrefix, freq, new byte[0]);
-        AEKey to = new AEKey(scopePrefix, freq + 1, new byte[0]);
+        AEKey lo = new AEKey(scopePrefix, freq,   new byte[0]);
+        AEKey hi = new AEKey(scopePrefix, freq+1, new byte[0]);
+        NavigableMap<AEKey, StoredEntry> committed = dbMap.subMap(lo, true, hi, false);
 
-        NavigableMap<AEKey, StoredEntry> subMap = dbMap.subMap(from, true, to, false);
-
-        try {
-            return SHARED_PARALLEL_POOL.submit(() ->
-                    subMap.entrySet()
-                            .parallelStream()
-                            .map(entry -> {
-                                AEItemKey aeKey = entry.getValue().aeKey();
-                                if (aeKey != null) {
-                                    return new AEKeyCacheEntry(entry.getKey(), aeKey, entry.getValue().count());
-                                }
-                                return null;
-                            })
-                            .filter(Objects::nonNull)
-                            .toList()
-            ).get();
-        } catch (Exception e) {
-            e.printStackTrace();
-            return Collections.emptyList();
+        List<AEKeyCacheEntry> result = new ArrayList<>();
+        for (var e : committed.entrySet()) {
+            long cnt = e.getValue().count();
+            if (cnt <= 0) continue;
+            AEKey k = e.getKey();
+            AEItemKey aek = e.getValue().aeKey();
+            if (aek != null) {
+                result.add(new AEKeyCacheEntry(k, aek, cnt));
+            }
         }
+        return result;
     }
-
 
     public static long getTotalItemCount(String scopePrefix, int frequency) {
         String key = scopePrefix + "|" + frequency;
@@ -214,11 +236,11 @@ public class EnderDBManager {
         if (cached == null || (now - cached.timestamp) >= 1000) {
             long newCount = calculateTotalItemCount(scopePrefix, frequency);
             itemCountCache.put(key, new CachedCount(newCount, now));
-            log("Recalculated item count: scope=%s freq=%d total=%d", scopePrefix, frequency, newCount);
+            log("[getTotalItemCount] Recalculated item count: scope=%s freq=%d total=%d", scopePrefix, frequency, newCount);
             return newCount;
         }
 
-        log("Using cached item count: scope=%s freq=%d total=%d", scopePrefix, frequency, cached.count);
+        log("[getTotalItemCount] Using cached item count: scope=%s freq=%d total=%d", scopePrefix, frequency, cached.count);
         return cached.count;
     }
 
@@ -263,36 +285,37 @@ public class EnderDBManager {
         try {
             File temp = new File(dbFile.getAbsolutePath() + ".tmp");
             try (DataOutputStream dos = new DataOutputStream(
-                    new BufferedOutputStream(new FileOutputStream(temp), 1024 * 512))) {
-                List<byte[]> records = parallelCall(() ->
-                        dbMap.entrySet().parallelStream().map(entry -> {
-                            try {
-                                ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                                DataOutputStream tmpDos = new DataOutputStream(baos);
-                                AEKey key = entry.getKey();
-                                long count = entry.getValue().count();
-                                tmpDos.writeUTF(key.scope());
-                                tmpDos.writeInt(key.freq());
-                                tmpDos.writeInt(key.itemBytes().length);
-                                tmpDos.write(key.itemBytes());
-                                tmpDos.writeLong(count);
-                                tmpDos.close();
-                                return baos.toByteArray();
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                                return null;
-                            }
-                        }).filter(Objects::nonNull).toList(), List.of()
-                );
-
-                for (byte[] record : records) {
-                    dos.write(record);
+                    new BufferedOutputStream(new FileOutputStream(temp), 512 * 1024))) {
+                // header
+                Properties props = new Properties();
+                String ver = "undefined";
+                try (InputStream in = EnderDBManager.class.getResourceAsStream("/mod_version.properties")) {
+                    if (in != null) { props.load(in); ver = props.getProperty("mod.version"); }
                 }
-            }
+                dos.writeUTF("EDB1");
+                dos.writeUTF(ver);
+                dos.writeInt(1);
+                dos.writeLong(System.currentTimeMillis());
 
+                // write entries
+                List<byte[]> recs = parallelCall(() ->
+                        dbMap.entrySet().parallelStream().map(e -> {
+                            try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                                 DataOutputStream tmp = new DataOutputStream(baos)) {
+                                AEKey k = e.getKey();
+                                tmp.writeUTF(k.scope()); tmp.writeInt(k.freq());
+                                tmp.writeInt(k.itemBytes().length); tmp.write(k.itemBytes());
+                                tmp.writeLong(e.getValue().count());
+                                return baos.toByteArray();
+                            } catch (IOException ex) {
+                                ex.printStackTrace(); return null;
+                            }
+                        }).filter(Objects::nonNull).toList(), List.of());
+                for (byte[] r : recs) dos.write(r);
+            }
             Files.move(temp.toPath(), dbFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             dirty = false;
-            log("Database committed successfully.");
+            log("[commitDatabase] Database committed successfully.");
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -302,7 +325,6 @@ public class EnderDBManager {
 
     public static AtomicLong getTotalItemsWritten() { return totalItemsWritten; }
     public static AtomicLong getTotalCommits() { return totalCommits; }
-    public static int getWalQueueSize() { return walQueue.size(); }
     public static int getDatabaseSize() { return dbMap.size(); }
     public static long getDatabaseFileSizeBytes() { return dbFile.exists() ? dbFile.length() : 0; }
 
@@ -312,130 +334,85 @@ public class EnderDBManager {
      * Starts the background commit thread that flushes WAL entries and periodically writes the database to disk.
      */
     private static void startBackgroundCommit() {
-        Thread t = new Thread(() -> {
-            List<byte[]> batch = new ArrayList<>();
-            while (running) {
-                try {
-                    flushDeltaBuffer();
 
-                    int walSizeBytes = walQueue.stream().mapToInt(arr -> arr.length + Long.BYTES + Integer.BYTES).sum();
-                    int dynamicBatchSize = Math.min(50_000, Math.max(1_000, walQueue.size() / 10));
+        if (commitThread != null && commitThread.isAlive()) {
+            log("[startBackgroundCommit] Commit thread already running; skipping new launch.");
+            return;
+        }
 
-                    if (walSizeBytes <= 5 * 1024 * 1024) {
-                        walQueue.drainTo(batch);
-                    } else {
-                        walQueue.drainTo(batch, dynamicBatchSize);
-                    }
+        running = true;
 
-                    long now = System.currentTimeMillis();
+        commitThread = new Thread(() -> {
+            log("[startBackgroundCommit] Background WAL commit thread starting...");
+            try {
+                final int WAL_BATCH_SIZE = 100;  // how many entries to drain at once
+                long nextWalTime = System.currentTimeMillis() + MIN_WAL_COMMIT_MS;
+                long nextDbTime  = System.currentTimeMillis() + MIN_DB_COMMIT_MS;
 
-                    boolean minIntervalElapsed = now - lastCommitTime >= minCommit ;
-                    boolean maxIntervalElapsed = now - lastCommitTime >= maxCommit ;
+                while (running) {
+                    try {
+                        long now = System.currentTimeMillis();
+                        int queueSize = walQueue.size();
 
-                    boolean shouldCommit = (!batch.isEmpty() && minIntervalElapsed)
-                            || walQueue.size() >= dynamicBatchSize * 2
-                            || maxIntervalElapsed;
+                        // === WAL FLUSH LOGIC ===
+                        boolean timeToFlushWAL = now >= nextWalTime;
+                        boolean queueThresholdMet = queueSize >= WAL_BATCH_SIZE;
 
-                    if (shouldCommit) {
-                        synchronized (commitLock) {
-                            for (byte[] entry : batch) {
-                                walWriter.writeInt(entry.length);
-                                walWriter.write(entry);
-                                walWriter.writeLong(checksum(entry));
-                                totalItemsWritten.incrementAndGet();
-                                lastCommitTime = now;
+                        if ((timeToFlushWAL || queueThresholdMet) && queueSize > 0) {
+                            synchronized (commitLock) {
+                                List<byte[]> batch = new ArrayList<>();
+                                walQueue.drainTo(batch, WAL_BATCH_SIZE);
+
+                                if (!batch.isEmpty()) {
+                                    log("[startBackgroundCommit] WAL flush: entries={}, (time={}, threshold={})",
+                                            batch.size(), timeToFlushWAL, queueThresholdMet);
+
+                                    for (byte[] rec : batch) {
+                                        walWriter.writeInt(rec.length);
+                                        walWriter.write(rec);
+                                        walWriter.writeLong(checksum(rec));
+                                        totalItemsWritten.incrementAndGet();
+                                    }
+                                    walWriter.flush();
+                                    lastWalCommitTime = now;
+                                    log("[startBackgroundCommit] WAL flushed, totalItemsWritten={}", totalItemsWritten.get());
+                                }
                             }
-                            walWriter.flush();
 
-                            if (!batch.isEmpty()) {
-                                log("Committed %d WAL entries. TotalItems=%d", batch.size(), totalItemsWritten);
-                            }
-                            boolean minDbCommitElapsed = now - lastDbCommitTime >= minDbCommit ;
-                            boolean maxDbCommitElapsed = now - lastDbCommitTime >= maxDbCommit ;
-                            if (dirty && (batch.size() > 1000 || maxDbCommitElapsed || minDbCommitElapsed)) {
+                            nextWalTime = now + MIN_WAL_COMMIT_MS;
+                        }
+
+                        // === DB COMMIT LOGIC ===
+                        if (dirty && now >= nextDbTime) {
+                            synchronized (commitLock) {
+                                log("[startBackgroundCommit] DB checkpoint: entries={} dirty={}", dbMap.size(), dirty);
                                 commitDatabase();
                                 truncateCurrentWAL();
                                 lastDbCommitTime = now;
                                 totalCommits.incrementAndGet();
+                                dirty = false;
+                                log("[startBackgroundCommit] DB committed, totalCommits={}", totalCommits.get());
                             }
+                            nextDbTime = now + MIN_DB_COMMIT_MS;
                         }
-                        batch.clear();
+
+                        Thread.sleep(100);
+                    } catch (Exception e) {
+                        LOGGER.error("Background commit error", e);
                     }
-
-                    long lastReplayCheck = System.currentTimeMillis();
-                    final long REPLAY_IDLE_INTERVAL_MS = 10_000;
-                    if (walQueue.isEmpty()) {
-                        if (now - lastReplayCheck >= REPLAY_IDLE_INTERVAL_MS) {
-                            lastReplayCheck = now;
-                            try {
-                                File dir = currentWAL.getParentFile();
-                                File[] rotatedWALs = dir.listFiles((d, name) -> name.matches("enderdrives\\.wal\\.\\d+"));
-                                if (rotatedWALs != null && rotatedWALs.length > 0) {
-                                    Arrays.sort(rotatedWALs, Comparator.comparing(File::getName));
-                                    for (File wal : rotatedWALs) {
-                                        if (wal.length() > 0) {
-                                            log("Idle Replay: Processing %s", wal.getName());
-                                            replayAndDeleteWAL(wal);
-                                        }
-                                    }
-                                }
-                            } catch (Exception e) {
-                                e.printStackTrace();
-                            }
-                        }
-                    }
-
-                    Thread.sleep(5);
-
-                } catch (Exception e) {
-                    e.printStackTrace();
                 }
+            } catch (Exception e) {
+                LOGGER.error("[EnderDB] WAL Commit thread crashed", e);
             }
         }, "EnderDB-CommitThread");
 
-        t.setDaemon(true);
-        t.start();
+        commitThread.setDaemon(true);
+        commitThread.start();
     }
+
+
 
 // ==== WAL Handling & Processing ====
-
-    /**
-     * Flushes the delta buffer into the WAL queue, preparing it for commit.
-     */
-    public static void flushDeltaBuffer() {
-        List<Map.Entry<AEKey, Long>> snapshot = new ArrayList<>(deltaBuffer.entrySet());
-        deltaBuffer.clear();
-
-        List<byte[]> entries = parallelCall(() ->
-                snapshot.parallelStream()
-                        .filter(e -> e.getValue() != 0)
-                        .map(entry -> {
-                            try {
-                                AEKey key = entry.getKey();
-                                long delta = entry.getValue();
-                                ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                                DataOutputStream dos = new DataOutputStream(baos);
-                                dos.writeUTF(key.scope());
-                                dos.writeInt(key.freq());
-                                dos.writeInt(key.itemBytes().length);
-                                dos.write(key.itemBytes());
-                                dos.writeLong(delta);
-                                dos.close();
-                                return baos.toByteArray();
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                                return null;
-                            }
-                        }).filter(Objects::nonNull)
-                        .toList(), List.of()
-        );
-
-        for (byte[] walEntry : entries) {
-            walQueue.add(walEntry);
-            applyBinaryOperation(walEntry);
-        }
-    }
-
 
     /**
      * Applies a binary WAL entry to the in-memory database map.
@@ -491,6 +468,24 @@ public class EnderDBManager {
             e.printStackTrace();
         }
     }
+
+    public static void flushWALQueue() {
+        if (walQueue.isEmpty()) return;
+        try {
+            log("[FlushWALQueue] Flushing WAL queue with {} entries on shutdown", walQueue.size());
+            List<byte[]> batch = new ArrayList<>();
+            walQueue.drainTo(batch);
+            for (byte[] rec : batch) {
+                walWriter.writeInt(rec.length);
+                walWriter.write(rec);
+                walWriter.writeLong(checksum(rec));
+            }
+            walWriter.flush();
+        } catch (IOException e) {
+            LOGGER.error("Error flushing WAL queue during shutdown", e);
+        }
+    }
+
 
     /**
      * Replays the current WAL and any rotated WAL files, applying their entries to memory.
@@ -554,6 +549,9 @@ public class EnderDBManager {
      * @throws IOException if opening fails.
      */
     private static void openWALStream() throws IOException {
+        if (currentWAL == null) {
+            throw new IllegalStateException("currentWAL file is not set!");
+        }
         walFileStream = new FileOutputStream(currentWAL, true);
         walWriter = new DataOutputStream(new BufferedOutputStream(walFileStream));
     }
@@ -564,8 +562,14 @@ public class EnderDBManager {
      * @throws IOException if closing fails.
      */
     private static void closeWALStream() throws IOException {
-        walWriter.close();
-        walFileStream.close();
+        if (walWriter != null) {
+            walWriter.close();
+            walWriter = null;
+        }
+        if (walFileStream != null) {
+            walFileStream.close();
+            walFileStream = null;
+        }
     }
 
     /**
@@ -574,43 +578,42 @@ public class EnderDBManager {
      * @throws IOException if reading fails.
      */
     private static void loadDatabase() throws IOException {
-        if (!dbFile.exists()) {
-            LOGGER.info("No database file found.");
-            return;
+        if (!dbFile.exists() || dbFile.length() == 0) return;
+
+        Properties props = new Properties();
+        String curVer = "undefined";
+        try (InputStream in = EnderDBManager.class.getResourceAsStream("/mod_version.properties")) {
+            if (in != null) { props.load(in); curVer = props.getProperty("mod.version"); }
         }
-        long fileLength = dbFile.length();
-        if (fileLength == 0) {
-            return;
-        }
-        dbMap.clear();
-        int recordCount = 0;
+
         try (DataInputStream dis = new DataInputStream(new BufferedInputStream(new FileInputStream(dbFile)))) {
-            while (true) {
-                try {
-                    String scope = dis.readUTF();
-                    int freq = dis.readInt();
-                    int keyLen = dis.readInt();
-                    byte[] keyBytes = new byte[keyLen];
-                    dis.readFully(keyBytes);
-                    long count = dis.readLong();
-                    AEKey key = new AEKey(scope, freq, keyBytes);
-                    // Reconstruct the AEItemKey from the stored bytes.
-                    AEItemKey aeKey = null;
-                    try {
-                        ItemStack stack = deserializeItemStackFromBytes(keyBytes);
-                        if (!stack.isEmpty()) {
-                            aeKey = AEItemKey.of(stack);
-                        }
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                    dbMap.put(key, new StoredEntry(count, aeKey));
-                    recordCount++;
-                } catch (Exception ex) {
-                    break;
-                }
+            dis.mark(128);
+            boolean hasHeader = false;
+            String header = dis.readUTF();
+            if ("EDB1".equals(header)) {
+                hasHeader = true;
+                String fileVer = dis.readUTF();
+                int fmt = dis.readInt();
+                long ts = dis.readLong();
+                log("Loaded EDB1 header ver={} fmt={} ts={}", fileVer, fmt, new Date(ts));
+                if (!fileVer.equals(curVer)) backupDatabaseFile(fileVer);
+            } else {
+                dis.reset();
+                backupDatabaseFile("0.0.0");
             }
-        }
+            while (true) {
+                String scope = dis.readUTF();
+                int freq = dis.readInt();
+                int len = dis.readInt();
+                byte[] key = new byte[len]; dis.readFully(key);
+                long count = dis.readLong();
+                AEItemKey aek = null;
+                try { ItemStack s = deserializeItemStackFromBytes(key);
+                    if (!s.isEmpty()) aek = AEItemKey.of(s);
+                } catch (Exception x) { x.printStackTrace(); }
+                dbMap.put(new AEKey(scope, freq, key), new StoredEntry(count, aek));
+            }
+        } catch (EOFException ignored) {}
     }
 
 // ==== Internal DB Tools ====
@@ -634,9 +637,7 @@ public class EnderDBManager {
      * @param args   Format arguments.
      */
     private static void log(String format, Object... args) {
-        if (debugLog) {
-            LOGGER.debug("[EnderDiskInventory] " + format, args);
-        }
+        if (DEBUG_LOG) LOGGER.info("[EnderDBManager] " + format, args);
     }
 
     /**
@@ -654,7 +655,7 @@ public class EnderDBManager {
 
         if (toMigrate.isEmpty()) return;
 
-        LOGGER.info("Detected {} old-format records. Migrating to global scope...", toMigrate.size());
+        log("[migrateOldRecords] Detected {} old-format records. Migrating to global scope...", toMigrate.size());
 
         for (Map.Entry<AEKey, StoredEntry> entry : toMigrate) {
             AEKey oldKey = entry.getKey();
@@ -668,7 +669,6 @@ public class EnderDBManager {
         dirty = true;
     }
 
-
     private static <T> T parallelCall(Callable<T> task, T fallback) {
         try {
             return SHARED_PARALLEL_POOL.submit(task).get();
@@ -678,28 +678,32 @@ public class EnderDBManager {
         }
     }
 
-    public static boolean isKnownItem(String scopePrefix, int frequency, byte[] keyBytes) {
-        AEKey key = new AEKey(scopePrefix, frequency, keyBytes);
-        return dbMap.containsKey(key) || deltaBuffer.containsKey(key);
-    }
+    private static void backupDatabaseFile(String version) {
+        String timestamp = java.time.LocalDateTime.now()
+                .toString()
+                .replace(":", "-");
 
-    public static Object getDriveLock(String scopePrefix, int frequency) {
-        return DRIVE_LOCKS.computeIfAbsent(scopePrefix + "|" + frequency, k -> new Object());
-    }
+        String backupName = String.format("enderdrives_%s_%s.zip", version, timestamp);
+        File backupZip = new File(dbFile.getParent(), backupName);
 
-    private static Object getDriveLockFromWAL(byte[] walEntry) {
-        try (DataInputStream dis = new DataInputStream(new ByteArrayInputStream(walEntry))) {
-            String scope = dis.readUTF();
-            int freq = dis.readInt();
-            return getDriveLock(scope, freq);
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(backupZip))) {
+            zipFile(dbFile, zos);
+            if (currentWAL != null && currentWAL.exists()) {
+                zipFile(currentWAL, zos);
+            }
+            LOGGER.info("Backed up existing database to {} due to mod version change.", backupZip.getName());
         } catch (IOException e) {
             e.printStackTrace();
-            return new Object();
         }
     }
 
-    private static Object getDriveLockForAllDelta() {
-        return DELTA_BUFFER_LOCK;
+    private static void zipFile(File file, ZipOutputStream zos) throws IOException {
+        try (FileInputStream fis = new FileInputStream(file)) {
+            ZipEntry entry = new ZipEntry(file.getName());
+            zos.putNextEntry(entry);
+            fis.transferTo(zos);
+            zos.closeEntry();
+        }
     }
 
 }

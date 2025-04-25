@@ -72,25 +72,15 @@ public class EnderDrives {
     }
 
     @SubscribeEvent
-    public void onWorldLoad(LevelEvent.Load event) {
-        if (!event.getLevel().isClientSide() && event.getLevel() instanceof ServerLevel) {
-            if (isDatabaseActive) {
-                EnderDBManager.shutdown();
-                TapeDBManager.shutdown();
-            }
-            EnderDBManager.init();
-            TapeDBManager.init();
-            isDatabaseActive = true;
-        }
+    public void onServerStart(net.neoforged.neoforge.event.server.ServerStartingEvent e) {
+        EnderDBManager.init();
+        TapeDBManager.init();
     }
 
     @SubscribeEvent
-    public void onWorldUnload(LevelEvent.Unload event) {
-        if (!event.getLevel().isClientSide() && isDatabaseActive) {
-            EnderDBManager.shutdown();
-            TapeDBManager.shutdown();
-            isDatabaseActive = false;
-        }
+    public void onServerStop(net.neoforged.neoforge.event.server.ServerStoppingEvent e) {
+        EnderDBManager.shutdown();
+        TapeDBManager.shutdown();
     }
 
     @SubscribeEvent
@@ -179,7 +169,6 @@ public class EnderDrives {
                                 return 0x00FF00;                             // Green
                             }
                         }
-
                         return 0xFFFFFFFF;
                     },
                     ItemInit.ENDER_DISK_1K.get(), ItemInit.ENDER_DISK_4K.get(),
@@ -188,8 +177,6 @@ public class EnderDrives {
                     ItemInit.TAPE_DISK.get()
             );
         }
-
-
     }
 
     public static ResourceLocation id(String id) {

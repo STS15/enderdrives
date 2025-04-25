@@ -3,7 +3,12 @@
   "minVersion": "0.8",
   "package": "com.sts15.enderdrives.mixins",
   "compatibilityLevel": "JAVA_21",
-  "mixins": [],
+  "plugin": "com.sts15.enderdrives.mixins.EnderDrivesMixinPlugin",
+  "mixins": [
+    "DriveBlockEntityMixin",
+    "IOPortBlockEntityMixin",
+    "compat.TileExIOPortMixin"
+  ],
   "client": [
   ],
   "server": [],

@@ -1,0 +1,7 @@
+{
+    "parent": "minecraft:item/generated",
+    "textures": {
+        "layer0": "enderdrives:item/ender_disk_4k",
+        "layer1": "enderdrives:item/ender_disk_led_yellow"
+    }
+}

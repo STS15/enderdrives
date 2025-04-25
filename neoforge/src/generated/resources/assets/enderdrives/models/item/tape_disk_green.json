@@ -1,0 +1,7 @@
+{
+    "parent": "minecraft:item/generated",
+    "textures": {
+        "layer0": "enderdrives:item/tape_disk",
+        "layer1": "enderdrives:item/ender_disk_led_green"
+    }
+}

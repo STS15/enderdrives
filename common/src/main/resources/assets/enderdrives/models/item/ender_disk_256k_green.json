@@ -1,7 +1,0 @@
-{
-  "parent": "item/generated",
-  "textures": {
-    "layer0": "enderdrives:item/ender_disk_256k",
-    "layer1": "enderdrives:item/ender_disk_led_green"
-  }
-}
