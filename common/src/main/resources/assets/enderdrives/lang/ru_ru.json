@@ -39,6 +39,6 @@
   "tooltip.enderdrives.scope.global": "§7Глобальный",
   "tooltip.enderdrives.unknown": "Неизвестно",
   "tooltip.enderdrives.tape.types": "%1$s из %2$s видов",
-  "tooltip.enderdrives.tape.bytes": "%1$s из %2$s байт"
-
+  "tooltip.enderdrives.tape.bytes": "%1$s из %2$s байт",
+  
 }
