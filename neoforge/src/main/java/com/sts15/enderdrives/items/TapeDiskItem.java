@@ -218,43 +218,45 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
         if (data == null || data.length == 0) return ItemStack.EMPTY;
 
         CompoundTag tag;
-        try {
-            try (DataInputStream dis = new DataInputStream(new ByteArrayInputStream(data))) {
-                tag = NbtIo.read(dis);
-            }
+        try (DataInputStream dis = new DataInputStream(new ByteArrayInputStream(data))) {
+            tag = NbtIo.read(dis);
         } catch (Exception e) {
-            System.err.println("[EnderDrives] Failed to read raw NBT data from ItemStack bytes.");
             e.printStackTrace();
             return ItemStack.EMPTY;
         }
 
         HolderLookup.Provider provider = ServerLifecycleHooks.getCurrentServer().registryAccess();
         try {
-            return ItemStack.parse(provider, tag).orElse(ItemStack.EMPTY);
+            ItemStack result = ItemStack.parse(provider, tag).orElse(ItemStack.EMPTY);
+            if (!result.isEmpty() && result.getCount() > 99) {
+                result.setCount(99);
+            }
+            return result;
         } catch (Exception e) {
-            System.err.println("[EnderDrives] ItemStack parse failed. Attempting to clean invalid components.");
             e.printStackTrace();
         }
+
+        // Recovery logic if first parse fails
         try {
             if (tag.contains("tag", 10)) {
                 CompoundTag tagTag = tag.getCompound("tag");
                 for (String key : List.of("Enchantments", "StoredEnchantments", "AttributeModifiers", "CustomModelData")) {
-                    if (tagTag.contains(key)) {
-                        tagTag.remove(key);
-                        System.err.println("[EnderDrives] Removed problematic NBT tag: " + key);
-                    }
+                    tagTag.remove(key);
                 }
-                if (tagTag.contains("apotheosis") || tagTag.contains("tetra")) {
-                    tagTag.remove("apotheosis");
-                    tagTag.remove("tetra");
-                    System.err.println("[EnderDrives] Removed mod-specific tag data (apotheosis/tetra).");
-                }
+                tagTag.remove("apotheosis");
+                tagTag.remove("tetra");
             }
-            return ItemStack.parse(provider, tag).orElse(ItemStack.EMPTY);
+            ItemStack fallback = ItemStack.parse(provider, tag).orElse(ItemStack.EMPTY);
+            if (!fallback.isEmpty() && fallback.getCount() > 99) {
+                System.err.printf("[EnderDrives] Clamped fallback stack size from %d to 99: %s%n", fallback.getCount(), fallback);
+                fallback.setCount(99);
+            }
+            return fallback;
         } catch (Exception recoveryException) {
             System.err.println("[EnderDrives] Final fallback failed during deserialization.");
             recoveryException.printStackTrace();
             return ItemStack.EMPTY;
         }
     }
+
 }

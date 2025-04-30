@@ -15,14 +15,17 @@ import com.sts15.enderdrives.db.EnderDBManager;
 import com.sts15.enderdrives.db.TapeDBManager;
 import com.sts15.enderdrives.inventory.EnderDiskInventory;
 import com.sts15.enderdrives.items.EnderDiskItem;
+import com.sts15.enderdrives.items.TapeDiskItem;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.Level;
 
 import java.io.*;
@@ -416,6 +419,43 @@ public class ModCommands {
                                                 })
                                         )
                                 )
+                                .then(Commands.literal("setid")
+                                        .then(Commands.argument("uuid", StringArgumentType.string())
+                                                .suggests((ctx, builder) -> {
+                                                    TapeDBManager.getSortedBinFilesOldestFirst()
+                                                            .forEach(f -> builder.suggest(f.getName().replace(".bin", "")));
+                                                    return builder.buildFuture();
+                                                })
+                                                .executes(ctx -> {
+                                                    CommandSourceStack source = ctx.getSource();
+                                                    ServerPlayer player = source.getPlayerOrException();
+                                                    ItemStack held = player.getMainHandItem();
+
+                                                    if (!(held.getItem() instanceof TapeDiskItem)) {
+                                                        source.sendFailure(Component.literal("§cHold a Tape Disk in your main hand."));
+                                                        return 0;
+                                                    }
+
+                                                    String uuidStr = StringArgumentType.getString(ctx, "uuid");
+                                                    try {
+                                                        UUID newId = UUID.fromString(uuidStr);
+
+                                                        held.update(DataComponents.CUSTOM_DATA, CustomData.EMPTY, old -> {
+                                                            CompoundTag tag = old.copyTag();
+                                                            tag.putString("tape_disk_id", newId.toString());
+                                                            return CustomData.of(tag);
+                                                        });
+
+                                                        source.sendSuccess(() -> Component.literal("§a✔ TapeDisk ID set to " + newId), true);
+                                                        return 1;
+
+                                                    } catch (IllegalArgumentException e) {
+                                                        source.sendFailure(Component.literal("§cInvalid UUID format: " + uuidStr));
+                                                        return 0;
+                                                    }
+                                                })
+                                        )
+                                )
                                 .then(Commands.literal("list")
                                         .executes(ctx -> {
                                             CommandSourceStack source = ctx.getSource();
@@ -467,7 +507,7 @@ public class ModCommands {
                                 .then(Commands.literal("import")
                                         .then(Commands.argument("uuid", StringArgumentType.string())
                                                 .suggests((ctx, builder) -> {
-                                                    com.sts15.enderdrives.db.TapeDBManager.getActiveTapeIds().forEach(uuid -> builder.suggest(uuid.toString()));
+                                                    TapeDBManager.getExportedJsonTapeIds().forEach(uuid -> builder.suggest(uuid.toString()));
                                                     return builder.buildFuture();
                                                 })
                                                 .executes(ctx -> {

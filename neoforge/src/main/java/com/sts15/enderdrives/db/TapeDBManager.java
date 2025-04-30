@@ -511,6 +511,27 @@ public class TapeDBManager {
         return list;
     }
 
+    public static List<UUID> getExportedJsonTapeIds() {
+        File exportDir = getExportFolder().toFile();
+        File[] jsonFiles = exportDir.listFiles((dir, name) -> name.endsWith(".json"));
+
+        if (jsonFiles == null || jsonFiles.length == 0) {
+            return Collections.emptyList();
+        }
+
+        List<UUID> ids = new ArrayList<>();
+        for (File json : jsonFiles) {
+            String base = json.getName().replace(".json", "");
+            try {
+                UUID id = UUID.fromString(base);
+                ids.add(id);
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+
+        return ids;
+    }
+
     public static boolean deleteTape(UUID tapeId) {
         if (activeCaches.containsKey(tapeId)) {
             return false;
