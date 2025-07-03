@@ -58,7 +58,7 @@ public class EnderDrivesMixinPlugin implements IMixinConfigPlugin {
     @Override
     public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
         if (mixinClassName.equals("com.sts15.enderdrives.mixins.compat.TileExIOPortMixin")) {
-            System.out.println("[EnderDrives] Mixin applied to TileExIOPort successfully.");
+            //System.out.println("[EnderDrives] Mixin applied to TileExIOPort successfully.");
         }
     }
 

@@ -116,8 +116,8 @@ public class TapeDBManager {
     public static void releaseFromRAM(UUID id) {
         TapeDriveCache cache = activeCaches.remove(id);
         if (cache != null) {
-            flush(id, cache);
-            log("Manually released tape {} from RAM", id);
+            flushAndSave(id, cache);
+            log("Released and saved tape {} from RAM", id);
         }
     }
 
@@ -131,9 +131,12 @@ public class TapeDBManager {
 
         TapeKey tapeKey = new TapeKey(itemBytes);
         cache.lastAccessed = System.currentTimeMillis();
+
+        // Apply delta to deltaBuffer
         cache.deltaBuffer.merge(tapeKey, delta, Long::sum);
         long newItemBytes = itemBytes.length * Math.abs(delta);
 
+        // Check if we're adding items and would exceed the byte limit
         if (delta > 0) {
             long estimated = cache.totalBytes + newItemBytes;
             if (estimated > getByteLimit(diskId)) {
@@ -142,28 +145,34 @@ public class TapeDBManager {
             }
         }
 
+        // Precompute what the resulting count would be
         long base = cache.entries.getOrDefault(tapeKey, StoredEntry.EMPTY).count();
         long total = base + cache.deltaBuffer.getOrDefault(tapeKey, 0L);
+
+        // If total count drops to zero or less, remove the key from both maps
         if (total <= 0) {
             cache.entries.remove(tapeKey);
             cache.deltaBuffer.remove(tapeKey);
         }
 
+        // Write the operation to the WAL
         File wal = getWalFile(diskId);
         try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(wal, true))) {
             dos.writeInt(itemBytes.length);
             dos.write(itemBytes);
             dos.writeLong(delta);
             dos.writeLong(checksum(itemBytes, delta));
-            cache.totalBytes += itemBytes.length * delta;
+            cache.totalBytes += itemBytes.length * Math.max(delta, 0);
         } catch (IOException e) {
             LOGGER.error("Failed to write WAL for disk {}: {}", diskId, e.getMessage());
         }
 
+        // Auto-flush if buffer is large
         if (cache.deltaBuffer.size() >= FLUSH_THRESHOLD) {
             flush(diskId, cache);
         }
     }
+
 
     public static void flushAll() {
         for (var entry : activeCaches.entrySet()) {
@@ -178,7 +187,7 @@ public class TapeDBManager {
         for (var entry : activeCaches.entrySet()) {
             UUID diskId = entry.getKey();
             TapeDriveCache cache = entry.getValue();
-            flush(diskId, cache);
+            flushAndSave(diskId, cache);
             if (!isPinned(diskId) && (now - cache.lastAccessed) > EVICTION_THRESHOLD) {
                 toEvict.add(diskId);
             }
@@ -189,6 +198,55 @@ public class TapeDBManager {
         }
     }
 
+    private static void flushAndSave(UUID diskId, TapeDriveCache cache) {
+        // Apply deltaBuffer to entries
+        for (var entry : cache.deltaBuffer.entrySet()) {
+            TapeKey key = entry.getKey();
+            long delta = entry.getValue();
+            StoredEntry current = cache.entries.getOrDefault(key, new StoredEntry(0, null));
+            long updated = current.count() + delta;
+
+            if (updated <= 0) {
+                cache.entries.remove(key);
+            } else {
+                AEItemKey aeKey = current.aeKey();
+                if (aeKey == null) {
+                    ItemStack stack = deserializeItemStackFromBytes(key.itemBytes());
+                    if (!stack.isEmpty()) {
+                        aeKey = AEItemKey.of(stack);
+                    }
+                }
+                cache.entries.put(key, new StoredEntry(updated, aeKey));
+            }
+        }
+
+        // Clear the deltaBuffer
+        cache.deltaBuffer.clear();
+
+        // Recalculate totalBytes from flushed entries
+        cache.totalBytes = cache.entries.entrySet().stream()
+                .mapToLong(e -> e.getKey().itemBytes().length * e.getValue().count())
+                .sum();
+
+        // Write flushed entries to disk
+        try (DataOutputStream dos = new DataOutputStream(new FileOutputStream(getDiskFile(diskId)))) {
+            for (var entry : cache.entries.entrySet()) {
+                byte[] data = entry.getKey().itemBytes();
+                dos.writeInt(data.length);
+                dos.write(data);
+                dos.writeLong(entry.getValue().count());
+            }
+        } catch (IOException e) {
+            LOGGER.warn("Flush/save failed for disk {}: {}", diskId, e.getMessage());
+        }
+
+        // Clear WAL file
+        try (FileOutputStream fos = new FileOutputStream(getWalFile(diskId))) {
+            // truncate
+        } catch (IOException e) {
+            LOGGER.warn("Failed to clear WAL for disk {}: {}", diskId, e.getMessage());
+        }
+    }
 
     public static void shutdown() {
         try {

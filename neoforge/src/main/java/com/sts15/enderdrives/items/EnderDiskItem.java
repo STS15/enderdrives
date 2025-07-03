@@ -3,6 +3,8 @@ package com.sts15.enderdrives.items;
 import appeng.api.config.FuzzyMode;
 import appeng.api.implementations.menuobjects.IMenuItem;
 import appeng.api.implementations.menuobjects.ItemMenuHost;
+import appeng.api.stacks.AEItemKey;
+import appeng.api.stacks.AEKeyType;
 import appeng.api.storage.cells.ICellWorkbenchItem;
 import appeng.items.contents.CellConfig;
 import appeng.menu.locator.ItemMenuHostLocator;
@@ -15,6 +17,7 @@ import com.sts15.enderdrives.integration.FTBTeamsCompat;
 import com.sts15.enderdrives.network.NetworkHandler;
 import com.sts15.enderdrives.screen.EnderDiskFrequencyScreen;
 import com.sts15.enderdrives.screen.FrequencyScope;
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
@@ -33,8 +36,10 @@ import net.neoforged.fml.ModList;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem {
 
@@ -119,6 +124,12 @@ public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem
         };
 
         lines.add(scopeLine);
+        var config = CellConfig.create(Set.of(AEKeyType.items()), stack);
+        int partitionCount = config.keySet().size();
+        if (partitionCount > 0) {
+            String plural = (partitionCount == 1) ? "" : "s";
+            lines.add(Component.translatable("tooltip.enderdrives.partitioned", partitionCount, plural));
+        }
     }
 
     public static void setTeamInfo(ItemStack stack, String teamId, String teamName) {
@@ -236,7 +247,7 @@ public class EnderDiskItem extends Item implements ICellWorkbenchItem, IMenuItem
 
     @Override
     public ConfigInventory getConfigInventory(ItemStack stack) {
-        return CellConfig.create(stack);
+        return CellConfig.create(Set.of(AEKeyType.items()), stack);
     }
 
     @Override

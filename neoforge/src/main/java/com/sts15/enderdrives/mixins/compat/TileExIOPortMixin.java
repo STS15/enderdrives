@@ -1,10 +1,17 @@
 package com.sts15.enderdrives.mixins.compat;
 
+import appeng.api.config.Actionable;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridNode;
+import appeng.api.networking.energy.IEnergyService;
 import appeng.api.networking.ticking.TickRateModulation;
+import appeng.api.stacks.AEKey;
+import appeng.api.stacks.KeyCounter;
+import appeng.api.storage.MEStorage;
+import appeng.api.storage.StorageHelper;
 import appeng.blockentity.storage.DriveBlockEntity;
 import com.glodblock.github.extendedae.common.tileentities.TileExIOPort;
+import com.sts15.enderdrives.inventory.TapeDiskInventory;
 import com.sts15.enderdrives.items.EnderDiskItem;
 import net.minecraft.core.BlockPos;
 import net.minecraft.sounds.SoundEvents;

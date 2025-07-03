@@ -3,6 +3,7 @@ package com.sts15.enderdrives.items;
 import appeng.api.config.FuzzyMode;
 import appeng.api.implementations.menuobjects.IMenuItem;
 import appeng.api.implementations.menuobjects.ItemMenuHost;
+import appeng.api.stacks.AEKeyType;
 import appeng.api.storage.cells.ICellWorkbenchItem;
 import appeng.items.contents.CellConfig;
 import appeng.menu.locator.ItemMenuHostLocator;
@@ -31,10 +32,7 @@ import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import java.io.*;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Supplier;
 
 import static com.sts15.enderdrives.db.TapeDBManager.getByteLimit;
@@ -107,6 +105,12 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
 
             lines.add(Component.literal("Tape ID: " + id.toString().substring(0, 8))
                     .withStyle(s -> s.withColor(labelColor)));
+            var config = CellConfig.create(Set.of(AEKeyType.items()), stack);
+            int partitionCount = config.keySet().size();
+            if (partitionCount > 0) {
+                String plural = (partitionCount == 1) ? "" : "s";
+                lines.add(Component.translatable("tooltip.enderdrives.partitioned", partitionCount, plural));
+            }
 
         } else {
             int typeLimit = getTypeLimit(stack);
@@ -124,6 +128,13 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
                     Component.literal("0").withStyle(s -> s.withColor(typeColor)),
                     Component.literal(String.valueOf(typeLimit)).withStyle(s -> s.withColor(limitColor))
             ).withStyle(s -> s.withColor(labelColor)));
+
+            var config = CellConfig.create(Set.of(AEKeyType.items()), stack);
+            int partitionCount = config.keySet().size();
+            if (partitionCount > 0) {
+                String plural = (partitionCount == 1) ? "" : "s";
+                lines.add(Component.translatable("tooltip.enderdrives.partitioned", partitionCount, plural));
+            }
         }
 
     }
@@ -166,8 +177,9 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
 
     @Override
     public ConfigInventory getConfigInventory(ItemStack stack) {
-        return CellConfig.create(stack);
+        return CellConfig.create(Set.of(AEKeyType.items()), stack);
     }
+
 
     @Override
     public FuzzyMode getFuzzyMode(ItemStack stack) {
@@ -199,7 +211,7 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
             HolderLookup.Provider provider = ServerLifecycleHooks.getCurrentServer().registryAccess();
             CompoundTag tag = (CompoundTag) stack.save(provider);
             if (tag == null) {
-                System.err.println("[EnderDrives] ItemStack failed to serialize: null tag.");
+                //System.err.println("[EnderDrives] ItemStack failed to serialize: null tag.");
                 return new byte[0];
             }
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -208,7 +220,7 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
             }
             return baos.toByteArray();
         } catch (Exception e) {
-            System.err.println("[EnderDrives] Failed to serialize ItemStack: " + stack);
+            //System.err.println("[EnderDrives] Failed to serialize ItemStack: " + stack);
             e.printStackTrace();
             return new byte[0];
         }
@@ -218,43 +230,51 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
         if (data == null || data.length == 0) return ItemStack.EMPTY;
 
         CompoundTag tag;
-        try {
-            try (DataInputStream dis = new DataInputStream(new ByteArrayInputStream(data))) {
-                tag = NbtIo.read(dis);
-            }
+        try (DataInputStream dis = new DataInputStream(new ByteArrayInputStream(data))) {
+            tag = NbtIo.read(dis);
         } catch (Exception e) {
-            System.err.println("[EnderDrives] Failed to read raw NBT data from ItemStack bytes.");
             e.printStackTrace();
             return ItemStack.EMPTY;
         }
 
         HolderLookup.Provider provider = ServerLifecycleHooks.getCurrentServer().registryAccess();
         try {
-            return ItemStack.parse(provider, tag).orElse(ItemStack.EMPTY);
+            ItemStack result = ItemStack.parse(provider, tag).orElse(ItemStack.EMPTY);
+            if (!result.isEmpty() && result.getCount() > 99) {
+                result.setCount(99);
+            }
+            return result;
         } catch (Exception e) {
-            System.err.println("[EnderDrives] ItemStack parse failed. Attempting to clean invalid components.");
             e.printStackTrace();
         }
+
+        // Recovery logic if first parse fails
         try {
             if (tag.contains("tag", 10)) {
                 CompoundTag tagTag = tag.getCompound("tag");
                 for (String key : List.of("Enchantments", "StoredEnchantments", "AttributeModifiers", "CustomModelData")) {
                     if (tagTag.contains(key)) {
                         tagTag.remove(key);
-                        System.err.println("[EnderDrives] Removed problematic NBT tag: " + key);
+                        //System.err.println("[EnderDrives] Removed problematic NBT tag: " + key);
                     }
                 }
                 if (tagTag.contains("apotheosis") || tagTag.contains("tetra")) {
                     tagTag.remove("apotheosis");
                     tagTag.remove("tetra");
-                    System.err.println("[EnderDrives] Removed mod-specific tag data (apotheosis/tetra).");
+                    //System.err.println("[EnderDrives] Removed mod-specific tag data (apotheosis/tetra).");
                 }
             }
-            return ItemStack.parse(provider, tag).orElse(ItemStack.EMPTY);
+            ItemStack fallback = ItemStack.parse(provider, tag).orElse(ItemStack.EMPTY);
+            if (!fallback.isEmpty() && fallback.getCount() > 99) {
+                //System.err.printf("[EnderDrives] Clamped fallback stack size from %d to 99: %s%n", fallback.getCount(), fallback);
+                fallback.setCount(99);
+            }
+            return fallback;
         } catch (Exception recoveryException) {
-            System.err.println("[EnderDrives] Final fallback failed during deserialization.");
+            //System.err.println("[EnderDrives] Final fallback failed during deserialization.");
             recoveryException.printStackTrace();
             return ItemStack.EMPTY;
         }
     }
+
 }
