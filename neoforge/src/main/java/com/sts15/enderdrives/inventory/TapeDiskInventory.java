@@ -2,13 +2,17 @@
 package com.sts15.enderdrives.inventory;
 
 import appeng.api.config.Actionable;
+import appeng.api.networking.IGrid;
 import appeng.api.networking.security.IActionSource;
 import appeng.api.stacks.*;
 import appeng.api.stacks.AEKey;
 import appeng.api.storage.cells.*;
+import appeng.blockentity.storage.DriveBlockEntity;
 import appeng.items.contents.CellConfig;
 import appeng.util.ConfigInventory;
 import com.sts15.enderdrives.db.*;
+import com.sts15.enderdrives.integration.DriveBlockEntityAccessor;
+import com.sts15.enderdrives.items.EnderDiskItem;
 import com.sts15.enderdrives.items.TapeDiskItem;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -64,39 +68,106 @@ public class TapeDiskInventory implements StorageCell {
         if (disabled || !(what instanceof AEItemKey itemKey)) return 0;
         if (!passesFilter(itemKey)) return 0;
 
-        ItemStack stackToInsert = itemKey.toStack((int) amount);
-        if (!isSpecialItem(stackToInsert)||!hasMeaningfulNBT(stackToInsert)) return 0;
-        byte[] data = TapeDiskItem.serializeItemStackToBytes(stackToInsert);
-        if (data == null || data.length == 0) return 0;
-
-        synchronized (getDiskLock(tapeId)) {
-            var cache = getCacheSafe(tapeId);
-            if (cache == null) {
-                loadFromDiskAsync(tapeId);
+        try {
+            if (amount < 1 || amount > 99) {
                 return 0;
             }
 
-            TapeKey thisKey = new TapeKey(data);
-            Set<TapeKey> simulatedKeys = new HashSet<>(cache.entries.keySet());
-            simulatedKeys.addAll(cache.deltaBuffer.keySet());
-            simulatedKeys.add(thisKey);
+            ItemStack descriptorStack = itemKey.toStack(1);
+            if (!isSpecialItem(descriptorStack) || !hasMeaningfulNBT(descriptorStack)) return 0;
 
-            int simulatedTypeCount = 0;
-            for (TapeKey key : simulatedKeys) {
-                long existing = cache.entries.getOrDefault(key, StoredEntry.EMPTY).count();
-                long delta = cache.deltaBuffer.getOrDefault(key, 0L);
-                long count = existing + delta;
-                if (key.equals(thisKey)) count += amount;
-                if (count > 0) simulatedTypeCount++;
+            byte[] data = TapeDiskItem.serializeItemStackToBytes(descriptorStack);
+            if (data == null || data.length == 0) {
+                return 0;
             }
-            if (simulatedTypeCount > typeLimit) return 0;
 
-            long currentBytes = getTotalStoredBytes(tapeId);
-            long extra = Math.round(data.length * amount * 0.75);
-            if (currentBytes + extra > getByteLimit(tapeId)) return 0;
+            synchronized (getDiskLock(tapeId)) {
+                TapeDriveCache cache;
+                try {
+                    cache = getCacheSafe(tapeId);
+                    if (cache == null) {
+                        loadFromDiskAsync(tapeId);
+                        return 0;
+                    }
+                } catch (Exception e) {
+                    return 0;
+                }
 
-            if (mode == Actionable.MODULATE) saveItem(tapeId, data, itemKey, amount);
+                TapeKey thisKey = new TapeKey(data);
+
+                Set<TapeKey> simulatedKeys = new HashSet<>();
+                try {
+                    simulatedKeys.addAll(cache.entries.keySet());
+                    simulatedKeys.addAll(cache.deltaBuffer.keySet());
+                    simulatedKeys.add(thisKey);
+                } catch (Exception e) {
+                    return 0;
+                }
+
+                int simulatedTypeCount = 0;
+                try {
+                    for (TapeKey key : simulatedKeys) {
+                        long existing = cache.entries.getOrDefault(key, StoredEntry.EMPTY).count();
+                        long delta = cache.deltaBuffer.getOrDefault(key, 0L);
+                        long count = existing + delta;
+                        if (key.equals(thisKey)) count += amount;
+                        if (count > 0) simulatedTypeCount++;
+                    }
+                } catch (Exception e) {
+                    return 0;
+                }
+
+                if (simulatedTypeCount > typeLimit) {
+                    return 0;
+                }
+
+                long currentBytes;
+                try {
+                    currentBytes = getTotalStoredBytes(tapeId);
+                } catch (Exception e) {
+                    return 0;
+                }
+
+                long extra = Math.round(data.length * amount * 0.75);
+                if (currentBytes + extra > getByteLimit(tapeId)) {
+                    return 0;
+                }
+
+                if (mode == Actionable.MODULATE) {
+                    try {
+                        saveItem(tapeId, data, itemKey, amount);
+                        var server = ServerLifecycleHooks.getCurrentServer();
+                        server.execute(() -> {
+                            source.machine().ifPresent(host -> {
+                                var node = host.getActionableNode();
+                                if (node != null) {
+                                    IGrid grid = node.getGrid();
+                                    if (grid != null) {
+                                        var drives = grid.getMachines(DriveBlockEntity.class);
+                                        for (DriveBlockEntity drive : drives) {
+                                            for (int i = 0; i < drive.getCellCount(); i++) {
+                                                ItemStack stackInSlot = drive.getInternalInventory().getStackInSlot(i);
+                                                if (!stackInSlot.isEmpty() && stackInSlot.getItem() instanceof TapeDiskItem) {
+                                                    ((DriveBlockEntityAccessor) drive).enderdrives$triggerVisualUpdate();
+                                                    ((DriveBlockEntityAccessor) drive).enderdrives$recalculateIdlePower();
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        });
+                    } catch (Exception e) {
+                        return 0;
+                    }
+                }
+            }
+
+        } catch (Exception topLevel) {
+            return 0;
         }
+
         return amount;
     }
 
@@ -118,7 +189,9 @@ public class TapeDiskInventory implements StorageCell {
             }
         }
         if (matchKey == null) {
-            byte[] data = TapeDiskItem.serializeItemStackToBytes(itemKey.toStack((int) amount));
+            ItemStack s = itemKey.toStack();
+            s.setCount((int) Math.min(amount, 64));
+            byte[] data = TapeDiskItem.serializeItemStackToBytes(s);
             if (data == null || data.length == 0) return 0;
             matchKey = new TapeKey(data);
         }
@@ -127,6 +200,28 @@ public class TapeDiskInventory implements StorageCell {
         long toExtract = Math.min(available, amount);
         if (toExtract > 0 && mode == Actionable.MODULATE) {
             saveItem(tapeId, matchKey.itemBytes(), itemKey, -toExtract);
+            var server = ServerLifecycleHooks.getCurrentServer();
+            server.execute(() -> {
+                source.machine().ifPresent(host -> {
+                    var node = host.getActionableNode();
+                    if (node != null) {
+                        IGrid grid = node.getGrid();
+                        if (grid != null) {
+                            var drives = grid.getMachines(DriveBlockEntity.class);
+                            for (DriveBlockEntity drive : drives) {
+                                for (int i = 0; i < drive.getCellCount(); i++) {
+                                    ItemStack stackInSlot = drive.getInternalInventory().getStackInSlot(i);
+                                    if (!stackInSlot.isEmpty() && stackInSlot.getItem() instanceof TapeDiskItem) {
+                                        ((DriveBlockEntityAccessor) drive).enderdrives$triggerVisualUpdate();
+                                        ((DriveBlockEntityAccessor) drive).enderdrives$recalculateIdlePower();
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            });
         }
         return toExtract;
     }
