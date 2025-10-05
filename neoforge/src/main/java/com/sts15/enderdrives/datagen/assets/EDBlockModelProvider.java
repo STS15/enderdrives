@@ -17,6 +17,7 @@ public class EDBlockModelProvider extends BlockModelProvider {
     @Override
     protected void registerModels() {
         driveCell("ender_cell");
+        driveCell("ender_fluid_cell");
         driveCell("tape_cell");
     }
 

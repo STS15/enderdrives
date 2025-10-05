@@ -7,11 +7,14 @@ import com.sts15.enderdrives.client.ClientTapeCache;
 import com.sts15.enderdrives.commands.ModCommands;
 import com.sts15.enderdrives.config.serverConfig;
 import com.sts15.enderdrives.db.EnderDBManager;
+import com.sts15.enderdrives.db.EnderFluidDBManager;
 import com.sts15.enderdrives.db.TapeDBManager;
 import com.sts15.enderdrives.init.CreativeTabRegistry;
 import com.sts15.enderdrives.inventory.EnderDiskInventory;
+import com.sts15.enderdrives.inventory.EnderFluidDiskInventory;
 import com.sts15.enderdrives.inventory.TapeDiskInventory;
 import com.sts15.enderdrives.items.EnderDiskItem;
+import com.sts15.enderdrives.items.EnderFluidDiskItem;
 import com.sts15.enderdrives.items.ItemInit;
 import com.sts15.enderdrives.items.TapeDiskItem;
 import com.sts15.enderdrives.network.NetworkHandler;
@@ -62,6 +65,7 @@ public class EnderDrives {
     public void onCommonSetup(FMLCommonSetupEvent event) {
         event.enqueueWork(() -> {
             StorageCells.addCellHandler(EnderDiskInventory.HANDLER);
+            StorageCells.addCellHandler(EnderFluidDiskInventory.HANDLER);
             StorageCells.addCellHandler(TapeDiskInventory.HANDLER);
         });
     }
@@ -74,12 +78,14 @@ public class EnderDrives {
     @SubscribeEvent
     public void onServerStart(net.neoforged.neoforge.event.server.ServerStartingEvent e) {
         EnderDBManager.init();
+        EnderFluidDBManager.init();
         TapeDBManager.init();
     }
 
     @SubscribeEvent
     public void onServerStop(net.neoforged.neoforge.event.server.ServerStoppingEvent e) {
         EnderDBManager.shutdown();
+        EnderFluidDBManager.shutdown();
         TapeDBManager.shutdown();
     }
 
@@ -98,6 +104,12 @@ public class EnderDrives {
         if (serverConfig.ENDER_DISK_256K_TOGGLE.get()) bitmask |= 1 << 4;
         if (serverConfig.ENDER_DISK_CREATIVE_TOGGLE.get()) bitmask |= 1 << 5;
         if (serverConfig.TAPE_DISK_TOGGLE.get()) bitmask |= 1 << 6;
+        if (serverConfig.ENDER_FLUID_DISK_1K_TOGGLE.get())       bitmask |= 1 << 7;
+        if (serverConfig.ENDER_FLUID_DISK_4K_TOGGLE.get())       bitmask |= 1 << 8;
+        if (serverConfig.ENDER_FLUID_DISK_16K_TOGGLE.get())      bitmask |= 1 << 9;
+        if (serverConfig.ENDER_FLUID_DISK_64K_TOGGLE.get())      bitmask |= 1 << 10;
+        if (serverConfig.ENDER_FLUID_DISK_256K_TOGGLE.get())     bitmask |= 1 << 11;
+        if (serverConfig.ENDER_FLUID_DISK_CREATIVE_TOGGLE.get()) bitmask |= 1 << 12;
         NetworkHandler.sendToClient(player, new SyncDisabledDrivesPacket(bitmask));
     }
 
@@ -112,6 +124,12 @@ public class EnderDrives {
             StorageCellModels.registerModel(ItemInit.ENDER_DISK_64K.get(), EnderDrives.id("block/drive/ender_cell"));
             StorageCellModels.registerModel(ItemInit.ENDER_DISK_256K.get(), EnderDrives.id("block/drive/ender_cell"));
             StorageCellModels.registerModel(ItemInit.ENDER_DISK_creative.get(), EnderDrives.id("block/drive/ender_cell"));
+            StorageCellModels.registerModel(ItemInit.ENDER_FLUID_DISK_1K.get(), EnderDrives.id("block/drive/ender_fluid_cell"));
+            StorageCellModels.registerModel(ItemInit.ENDER_FLUID_DISK_4K.get(), EnderDrives.id("block/drive/ender_fluid_cell"));
+            StorageCellModels.registerModel(ItemInit.ENDER_FLUID_DISK_16K.get(), EnderDrives.id("block/drive/ender_fluid_cell"));
+            StorageCellModels.registerModel(ItemInit.ENDER_FLUID_DISK_64K.get(), EnderDrives.id("block/drive/ender_fluid_cell"));
+            StorageCellModels.registerModel(ItemInit.ENDER_FLUID_DISK_256K.get(), EnderDrives.id("block/drive/ender_fluid_cell"));
+            StorageCellModels.registerModel(ItemInit.ENDER_FLUID_DISK_creative.get(), EnderDrives.id("block/drive/ender_fluid_cell"));
             StorageCellModels.registerModel(ItemInit.TAPE_DISK.get(), EnderDrives.id("block/drive/tape_cell"));
 
             event.enqueueWork(() -> {
@@ -122,10 +140,23 @@ public class EnderDrives {
                         ItemInit.ENDER_DISK_64K.get(),
                         ItemInit.ENDER_DISK_256K.get(),
                         ItemInit.ENDER_DISK_creative.get(),
+                        ItemInit.ENDER_FLUID_DISK_1K.get(),
+                        ItemInit.ENDER_FLUID_DISK_4K.get(),
+                        ItemInit.ENDER_FLUID_DISK_16K.get(),
+                        ItemInit.ENDER_FLUID_DISK_64K.get(),
+                        ItemInit.ENDER_FLUID_DISK_256K.get(),
+                        ItemInit.ENDER_FLUID_DISK_creative.get(),
                         ItemInit.TAPE_DISK.get()
                 }) {
                     ItemProperties.register(disk, EnderDrives.id("status"), (stack, level, entity, seed) -> {
-                        var state = EnderDiskInventory.getCellStateForStack(stack);
+                        CellState state;
+                        if (stack.getItem() instanceof EnderDiskItem  || stack.getItem() instanceof TapeDiskItem) {
+                            state = EnderDiskInventory.getCellStateForStack(stack);
+                        } else if (stack.getItem() instanceof EnderFluidDiskItem) {
+                            state = EnderFluidDiskInventory.getCellStateForStack(stack);
+                        } else {
+                            state = CellState.ABSENT;
+                        }
                         return switch (state) {
                             case ABSENT, EMPTY -> 0.0f;
                             case NOT_EMPTY -> 1.0f;
@@ -174,6 +205,12 @@ public class EnderDrives {
                     ItemInit.ENDER_DISK_1K.get(), ItemInit.ENDER_DISK_4K.get(),
                     ItemInit.ENDER_DISK_16K.get(), ItemInit.ENDER_DISK_64K.get(),
                     ItemInit.ENDER_DISK_256K.get(), ItemInit.ENDER_DISK_creative.get(),
+                    ItemInit.ENDER_FLUID_DISK_1K.get(),
+                    ItemInit.ENDER_FLUID_DISK_4K.get(),
+                    ItemInit.ENDER_FLUID_DISK_16K.get(),
+                    ItemInit.ENDER_FLUID_DISK_64K.get(),
+                    ItemInit.ENDER_FLUID_DISK_256K.get(),
+                    ItemInit.ENDER_FLUID_DISK_creative.get(),
                     ItemInit.TAPE_DISK.get()
             );
         }

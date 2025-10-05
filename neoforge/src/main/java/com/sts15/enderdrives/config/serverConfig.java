@@ -20,7 +20,15 @@ public class serverConfig {
     public static ModConfigSpec.BooleanValue ENDER_DISK_CREATIVE_TOGGLE;
     public static ModConfigSpec.BooleanValue TAPE_DISK_TOGGLE;
 
-    // === Ender Disk Configs ===
+    // --- NEW: fluid disk toggles (optional, mirrors item toggles) ---
+    public static ModConfigSpec.BooleanValue ENDER_FLUID_DISK_1K_TOGGLE;
+    public static ModConfigSpec.BooleanValue ENDER_FLUID_DISK_4K_TOGGLE;
+    public static ModConfigSpec.BooleanValue ENDER_FLUID_DISK_16K_TOGGLE;
+    public static ModConfigSpec.BooleanValue ENDER_FLUID_DISK_64K_TOGGLE;
+    public static ModConfigSpec.BooleanValue ENDER_FLUID_DISK_256K_TOGGLE;
+    public static ModConfigSpec.BooleanValue ENDER_FLUID_DISK_CREATIVE_TOGGLE;
+
+    // === Ender Disk Configs (ITEM) ===
     public static final String CATEGORY_ENDERDISK = "ender_disk";
     public static final String CATEGORY_DESC_ENDERDISK = "Configuration for Ender Drive item type limits.";
 
@@ -30,6 +38,17 @@ public class serverConfig {
     public static ModConfigSpec.IntValue ENDER_DISK_64K_TYPE_LIMIT;
     public static ModConfigSpec.IntValue ENDER_DISK_256K_TYPE_LIMIT;
     public static ModConfigSpec.IntValue ENDER_DISK_CREATIVE_TYPE_LIMIT;
+
+    // --- NEW: Ender Fluid Disk Configs ---
+    public static final String CATEGORY_ENDERFLUIDDISK = "ender_fluid_disk";
+    public static final String CATEGORY_DESC_ENDERFLUIDDISK = "Configuration for Ender Drive fluid type limits.";
+
+    public static ModConfigSpec.IntValue ENDER_FLUID_DISK_1K_TYPE_LIMIT;
+    public static ModConfigSpec.IntValue ENDER_FLUID_DISK_4K_TYPE_LIMIT;
+    public static ModConfigSpec.IntValue ENDER_FLUID_DISK_16K_TYPE_LIMIT;
+    public static ModConfigSpec.IntValue ENDER_FLUID_DISK_64K_TYPE_LIMIT;
+    public static ModConfigSpec.IntValue ENDER_FLUID_DISK_256K_TYPE_LIMIT;
+    public static ModConfigSpec.IntValue ENDER_FLUID_DISK_CREATIVE_TYPE_LIMIT;
 
     // === Ender Drive Scope Configs ===
     public static final String CATEGORY_SCOPE = "ender_scope";
@@ -55,7 +74,6 @@ public class serverConfig {
     public static ModConfigSpec.IntValue END_DB_MAX_DB_COMMIT_INTERVAL_MS;
     public static ModConfigSpec.BooleanValue END_DB_DEBUG_LOG;
 
-
     // === Tape Disk Configs ===
     public static final String CATEGORY_TAPEDISK = "tape_disk";
     public static final String CATEGORY_DESC_TAPEDISK = "Configuration for tape disk cold storage drives.";
@@ -77,11 +95,11 @@ public class serverConfig {
     public static ModConfigSpec.IntValue AUTO_BENCHMARK_MS_SLEEP;
     public static ModConfigSpec.DoubleValue AUTO_BENCHMARK_MIN_TPS;
 
-
     public static void register(ModContainer container) {
         generalToggleConfig();
         enderScopeConfig();
         enderDiskTypeLimits();
+        enderFluidDiskTypeLimits();
         tapeDiskConfig();
         enderDBConfig();
         enderCommandConfig();
@@ -90,13 +108,22 @@ public class serverConfig {
 
     private static void generalToggleConfig() {
         SERVER_BUILDER.comment(CATEGORY_DESC_GENERAL).push(CATEGORY_GENERAL);
-        ENDER_DISK_1K_TOGGLE = SERVER_BUILDER.define("enable_ender_disk_1k", true);
-        ENDER_DISK_4K_TOGGLE = SERVER_BUILDER.define("enable_ender_disk_4k", true);
-        ENDER_DISK_16K_TOGGLE = SERVER_BUILDER.define("enable_ender_disk_16k", true);
-        ENDER_DISK_64K_TOGGLE = SERVER_BUILDER.define("enable_ender_disk_64k", true);
-        ENDER_DISK_256K_TOGGLE = SERVER_BUILDER.define("enable_ender_disk_256k", true);
+        // items
+        ENDER_DISK_1K_TOGGLE       = SERVER_BUILDER.define("enable_ender_disk_1k", true);
+        ENDER_DISK_4K_TOGGLE       = SERVER_BUILDER.define("enable_ender_disk_4k", true);
+        ENDER_DISK_16K_TOGGLE      = SERVER_BUILDER.define("enable_ender_disk_16k", true);
+        ENDER_DISK_64K_TOGGLE      = SERVER_BUILDER.define("enable_ender_disk_64k", true);
+        ENDER_DISK_256K_TOGGLE     = SERVER_BUILDER.define("enable_ender_disk_256k", true);
         ENDER_DISK_CREATIVE_TOGGLE = SERVER_BUILDER.define("enable_ender_disk_creative", true);
-        TAPE_DISK_TOGGLE = SERVER_BUILDER.define("enable_tape_disk", true);
+        TAPE_DISK_TOGGLE           = SERVER_BUILDER.define("enable_tape_disk", true);
+
+        // fluids
+        ENDER_FLUID_DISK_1K_TOGGLE       = SERVER_BUILDER.define("enable_ender_fluid_disk_1k", true);
+        ENDER_FLUID_DISK_4K_TOGGLE       = SERVER_BUILDER.define("enable_ender_fluid_disk_4k", true);
+        ENDER_FLUID_DISK_16K_TOGGLE      = SERVER_BUILDER.define("enable_ender_fluid_disk_16k", true);
+        ENDER_FLUID_DISK_64K_TOGGLE      = SERVER_BUILDER.define("enable_ender_fluid_disk_64k", true);
+        ENDER_FLUID_DISK_256K_TOGGLE     = SERVER_BUILDER.define("enable_ender_fluid_disk_256k", true);
+        ENDER_FLUID_DISK_CREATIVE_TOGGLE = SERVER_BUILDER.define("enable_ender_fluid_disk_creative", true);
         SERVER_BUILDER.pop();
     }
 
@@ -126,6 +153,36 @@ public class serverConfig {
         ENDER_DISK_CREATIVE_TYPE_LIMIT = SERVER_BUILDER
                 .comment("Max item types for Creative Ender Disk")
                 .defineInRange("type_limit_creative", Integer.MAX_VALUE, 1, Integer.MAX_VALUE);
+
+        SERVER_BUILDER.pop();
+    }
+
+    private static void enderFluidDiskTypeLimits() {
+        SERVER_BUILDER.comment(CATEGORY_DESC_ENDERFLUIDDISK).push(CATEGORY_ENDERFLUIDDISK);
+
+        ENDER_FLUID_DISK_1K_TYPE_LIMIT = SERVER_BUILDER
+                .comment("Max FLUID types for Ender Fluid Disk 1k")
+                .defineInRange("fluid_type_limit_1k", 1, 1, Integer.MAX_VALUE);
+
+        ENDER_FLUID_DISK_4K_TYPE_LIMIT = SERVER_BUILDER
+                .comment("Max FLUID types for Ender Fluid Disk 4k")
+                .defineInRange("fluid_type_limit_4k", 4, 1, Integer.MAX_VALUE);
+
+        ENDER_FLUID_DISK_16K_TYPE_LIMIT = SERVER_BUILDER
+                .comment("Max FLUID types for Ender Fluid Disk 16k")
+                .defineInRange("fluid_type_limit_16k", 8, 1, Integer.MAX_VALUE);
+
+        ENDER_FLUID_DISK_64K_TYPE_LIMIT = SERVER_BUILDER
+                .comment("Max FLUID types for Ender Fluid Disk 64k")
+                .defineInRange("fluid_type_limit_64k", 16, 1, Integer.MAX_VALUE);
+
+        ENDER_FLUID_DISK_256K_TYPE_LIMIT = SERVER_BUILDER
+                .comment("Max FLUID types for Ender Fluid Disk 256k")
+                .defineInRange("fluid_type_limit_256k", 64, 1, Integer.MAX_VALUE);
+
+        ENDER_FLUID_DISK_CREATIVE_TYPE_LIMIT = SERVER_BUILDER
+                .comment("Max FLUID types for Creative Ender Fluid Disk")
+                .defineInRange("fluid_type_limit_creative", Integer.MAX_VALUE, 1, Integer.MAX_VALUE);
 
         SERVER_BUILDER.pop();
     }
@@ -238,5 +295,4 @@ public class serverConfig {
 
         SERVER_BUILDER.pop();
     }
-
 }

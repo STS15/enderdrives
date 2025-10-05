@@ -30,6 +30,14 @@ public class EDItemModelProvider extends ItemModelProvider {
         enderDiskColors(ItemInit.ENDER_DISK_64K);
         enderDiskColors(ItemInit.ENDER_DISK_256K);
         enderDiskColors(ItemInit.ENDER_DISK_creative);
+
+        enderDiskColors(ItemInit.ENDER_FLUID_DISK_1K);
+        enderDiskColors(ItemInit.ENDER_FLUID_DISK_4K);
+        enderDiskColors(ItemInit.ENDER_FLUID_DISK_16K);
+        enderDiskColors(ItemInit.ENDER_FLUID_DISK_64K);
+        enderDiskColors(ItemInit.ENDER_FLUID_DISK_256K);
+        enderDiskColors(ItemInit.ENDER_FLUID_DISK_creative);
+
         enderDiskColors(ItemInit.TAPE_DISK);
 
         generated(ItemInit.ENDER_STORAGE_COMPONENT_1K);
@@ -66,4 +74,5 @@ public class EDItemModelProvider extends ItemModelProvider {
                 .override().predicate(status, 2).model(colors.get(2)).end()  // yellow
                 .override().predicate(status, 3).model(colors.get(3)).end(); // red
     }
+
 }
