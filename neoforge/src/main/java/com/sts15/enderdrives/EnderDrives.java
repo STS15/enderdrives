@@ -22,7 +22,6 @@ import com.sts15.enderdrives.network.packet.SyncConfigPacket;
 import com.sts15.enderdrives.network.packet.SyncDisabledDrivesPacket;
 import net.minecraft.client.renderer.item.ItemProperties;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.Item;
 import net.neoforged.api.distmarker.Dist;
@@ -36,18 +35,14 @@ import net.neoforged.neoforge.client.event.RegisterColorHandlersEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
-import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import java.util.Objects;
 import java.util.UUID;
-
 import static com.sts15.enderdrives.Constants.MOD_ID;
 
 @Mod(MOD_ID)
 public class EnderDrives {
-
-    private static boolean isDatabaseActive = false;
 
     public EnderDrives(IEventBus modEventBus, ModContainer modContainer) {
         serverConfig.register(modContainer);
@@ -202,9 +197,12 @@ public class EnderDrives {
                         }
                         return 0xFFFFFFFF;
                     },
-                    ItemInit.ENDER_DISK_1K.get(), ItemInit.ENDER_DISK_4K.get(),
-                    ItemInit.ENDER_DISK_16K.get(), ItemInit.ENDER_DISK_64K.get(),
-                    ItemInit.ENDER_DISK_256K.get(), ItemInit.ENDER_DISK_creative.get(),
+                    ItemInit.ENDER_DISK_1K.get(),
+                    ItemInit.ENDER_DISK_4K.get(),
+                    ItemInit.ENDER_DISK_16K.get(),
+                    ItemInit.ENDER_DISK_64K.get(),
+                    ItemInit.ENDER_DISK_256K.get(),
+                    ItemInit.ENDER_DISK_creative.get(),
                     ItemInit.ENDER_FLUID_DISK_1K.get(),
                     ItemInit.ENDER_FLUID_DISK_4K.get(),
                     ItemInit.ENDER_FLUID_DISK_16K.get(),

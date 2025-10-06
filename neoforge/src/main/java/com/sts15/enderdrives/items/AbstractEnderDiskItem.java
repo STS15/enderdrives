@@ -4,12 +4,9 @@ import appeng.api.config.FuzzyMode;
 import appeng.api.implementations.menuobjects.IMenuItem;
 import appeng.api.implementations.menuobjects.ItemMenuHost;
 import appeng.api.stacks.AEKeyType;
-import appeng.api.storage.StorageCells;
 import appeng.api.storage.cells.ICellWorkbenchItem;
-import appeng.api.storage.cells.StorageCell;
 import appeng.api.upgrades.IUpgradeInventory;
 import appeng.api.upgrades.IUpgradeableItem;
-import appeng.core.localization.PlayerMessages;
 import appeng.items.contents.CellConfig;
 import appeng.menu.locator.ItemMenuHostLocator;
 import appeng.recipes.game.StorageCellDisassemblyRecipe;
@@ -27,7 +24,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
-import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -39,7 +35,6 @@ import net.neoforged.fml.ModList;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -146,7 +141,7 @@ public abstract class AbstractEnderDiskItem extends Item implements ICellWorkben
         });
     }
 
-// ====== Owner / team ids =========================================================================================
+    // ====== Owner / team ids =========================================================================================
 
     public static void setOwnerUUID(ItemStack stack, UUID uuid) {
         stack.update(DataComponents.CUSTOM_DATA, CustomData.EMPTY, oldData -> {
@@ -203,7 +198,7 @@ public abstract class AbstractEnderDiskItem extends Item implements ICellWorkben
         // no-op
     }
 
-// ====== Use & GUI ================================================================================================
+    // ====== Use & GUI ================================================================================================
 
     @Override
     public void appendHoverText(@NotNull ItemStack stack, @NotNull TooltipContext context, @NotNull List<Component> lines, @NotNull TooltipFlag advancedTooltips) {
@@ -266,7 +261,12 @@ public abstract class AbstractEnderDiskItem extends Item implements ICellWorkben
         int partitionCount = config.keySet().size();
         if (partitionCount > 0) {
             String plural = (partitionCount == 1) ? "" : "s";
-            lines.add(Component.translatable("tooltip.enderdrives.partitioned", partitionCount, plural));
+            if (stack.getItem() instanceof EnderDiskItem) {
+                lines.add(Component.translatable("tooltip.enderdrives.partitioned_item", partitionCount, plural));
+            } else {
+                lines.add(Component.translatable("tooltip.enderdrives.partitioned_fluid", partitionCount, plural));
+            }
+
         }
     }
 
@@ -336,10 +336,6 @@ public abstract class AbstractEnderDiskItem extends Item implements ICellWorkben
         return index >= 0 && ClientConfigCache.isDriveDisabled(index);
     }
 
-    /**
-     * Map this item to a “drive index” for client config toggles/tinting.
-     * Adjust these to your actual registry objects.
-     */
     public static int getDriveIndex(Item item) {
         if (item == ItemInit.ENDER_DISK_1K.get()) return 0;
         if (item == ItemInit.ENDER_DISK_4K.get()) return 1;

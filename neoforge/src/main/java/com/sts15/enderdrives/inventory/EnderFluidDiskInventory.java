@@ -13,7 +13,6 @@ import appeng.api.storage.cells.StorageCell;
 import appeng.blockentity.storage.DriveBlockEntity;
 import appeng.items.contents.CellConfig;
 import appeng.util.ConfigInventory;
-import com.sts15.enderdrives.db.AEKeyCacheEntry;
 import com.sts15.enderdrives.db.EnderFluidDBManager;
 import com.sts15.enderdrives.db.FluidKeyCacheEntry;
 import com.sts15.enderdrives.integration.DriveBlockEntityAccessor;
@@ -38,29 +37,20 @@ import java.util.List;
 import java.util.Set;
 import static com.sts15.enderdrives.db.EnderFluidDBManager.running;
 
-/**
- * Fluid-only StorageCell implementation that matches EnderDiskInventory semantics.
- * - Keys are AEFluidKey
- * - Amounts are in mB units
- * - Uses EnderFluidDBManager as the backing store
- */
+// Amounts are in mB
 public class EnderFluidDiskInventory implements StorageCell {
 
     private static final Logger LOGGER = LogManager.getLogger("EnderDrives");
     private static final boolean DEBUG_LOG = false;
-
     private final ItemStack stack;
     private final int frequency;
     private final int typeLimit;
     private final String scopePrefix;
     private final boolean disabled;
-
     public static final ICellHandler HANDLER = new Handler();
 
     public EnderFluidDiskInventory(ItemStack stack) {
-        if (!(stack.getItem() instanceof EnderFluidDiskItem item)) {
-            throw new IllegalArgumentException("Item is not an EnderFluidDisk!");
-        }
+        if (!(stack.getItem() instanceof EnderFluidDiskItem item)) { throw new IllegalArgumentException("Item is not an EnderFluidDisk!"); }
         this.stack = stack;
         this.frequency = EnderFluidDiskItem.getFrequency(stack);
         this.typeLimit = item.getTypeLimit();
@@ -224,9 +214,6 @@ public class EnderFluidDiskInventory implements StorageCell {
         });
     }
 
-    /**
-     * Serialize a FluidStack to raw NBT bytes (compatible with NeoForge 1.21+).
-     */
     public static byte[] serializeFluidStackToBytes(FluidStack stack) {
         try {
             HolderLookup.Provider provider = ServerLifecycleHooks.getCurrentServer().registryAccess();
@@ -243,9 +230,6 @@ public class EnderFluidDiskInventory implements StorageCell {
         }
     }
 
-    /**
-     * Deserialize a FluidStack from raw NBT bytes.
-     */
     public static FluidStack deserializeFluidStackFromBytes(byte[] data) {
         try (DataInputStream dis = new DataInputStream(new ByteArrayInputStream(data))) {
             CompoundTag tag = NbtIo.read(dis);

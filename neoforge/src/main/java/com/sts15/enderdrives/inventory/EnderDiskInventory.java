@@ -44,7 +44,6 @@ public class EnderDiskInventory implements StorageCell {
     private static final ThreadLocal<ByteArrayOutputStream> LOCAL_BAOS = ThreadLocal.withInitial(() -> new ByteArrayOutputStream(512));
     private static final ThreadLocal<DataOutputStream> LOCAL_DOS = ThreadLocal.withInitial(() -> new DataOutputStream(LOCAL_BAOS.get()));
 
-
     public EnderDiskInventory(ItemStack stack) {
         if (!(stack.getItem() instanceof EnderDiskItem item)) {
             throw new IllegalArgumentException("Item is not an EnderDisk!");
