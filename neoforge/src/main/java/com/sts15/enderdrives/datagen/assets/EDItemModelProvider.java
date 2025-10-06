@@ -45,6 +45,9 @@ public class EDItemModelProvider extends ItemModelProvider {
         generated(ItemInit.ENDER_STORAGE_COMPONENT_16K);
         generated(ItemInit.ENDER_STORAGE_COMPONENT_64K);
         generated(ItemInit.ENDER_STORAGE_COMPONENT_256K);
+
+        generated(ItemInit.ENDER_ITEM_HOUSING);
+        generated(ItemInit.ENDER_FLUID_HOUSING);
     }
 
     private void generated(DeferredHolder<Item, ? extends Item> item) {

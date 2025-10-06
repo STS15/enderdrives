@@ -4,10 +4,17 @@ import appeng.api.config.FuzzyMode;
 import appeng.api.implementations.menuobjects.IMenuItem;
 import appeng.api.implementations.menuobjects.ItemMenuHost;
 import appeng.api.stacks.AEKeyType;
+import appeng.api.storage.StorageCells;
 import appeng.api.storage.cells.ICellWorkbenchItem;
+import appeng.api.storage.cells.StorageCell;
+import appeng.api.upgrades.IUpgradeInventory;
+import appeng.api.upgrades.IUpgradeableItem;
+import appeng.core.localization.PlayerMessages;
 import appeng.items.contents.CellConfig;
 import appeng.menu.locator.ItemMenuHostLocator;
+import appeng.recipes.game.StorageCellDisassemblyRecipe;
 import appeng.util.ConfigInventory;
+import appeng.util.InteractionUtil;
 import appeng.util.Platform;
 import com.sts15.enderdrives.client.ClientConfigCache;
 import com.sts15.enderdrives.integration.FTBTeamsCompat;
@@ -20,6 +27,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -30,8 +38,8 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.neoforged.fml.ModList;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -264,22 +272,63 @@ public abstract class AbstractEnderDiskItem extends Item implements ICellWorkben
 
     @Override
     public @NotNull InteractionResultHolder<ItemStack> use(@NotNull Level level, Player player, @NotNull InteractionHand hand) {
-        ItemStack itemStack = player.getItemInHand(hand);
-        if (isDisabled(itemStack)) {
+        final ItemStack stack = player.getItemInHand(hand);
+
+        if (player.isShiftKeyDown() && InteractionUtil.isInAlternateUseMode(player)) {
+            if (level.isClientSide) {
+                return InteractionResultHolder.consume(stack);
+            }
+
+            if (!InteractionUtil.isInAlternateUseMode(player)) {
+                return InteractionResultHolder.fail(stack);
+            }
+
+            var parts = StorageCellDisassemblyRecipe.getDisassemblyResult(level, stack.getItem());
+            if (parts.isEmpty()) {
+                return InteractionResultHolder.fail(stack);
+            }
+
+            var inv = player.getInventory();
+            if (inv.getSelected() != stack) {
+                return InteractionResultHolder.fail(stack);
+            }
+            // Enderdrive items are not stored in the items data so disassembly with items on frequency is not a problem
+//            boolean isEnderDrive = stack.getItem() instanceof EnderDiskItem;
+//            var cell = StorageCells.getCellInventory(stack, null);
+//            if (cell != null && !isEnderDrive && !cell.getAvailableStacks().isEmpty()) {
+//                player.displayClientMessage(PlayerMessages.OnlyEmptyCellsCanBeDisassembled.text(), true);
+//                return InteractionResultHolder.fail(stack);
+//            }
+
+            inv.setItem(inv.selected, ItemStack.EMPTY);
+            for (ItemStack part : parts) {
+                inv.placeItemBackInInventory(part.copy());
+            }
+
+            if (stack.getItem() instanceof IUpgradeableItem upg) {
+                IUpgradeInventory upgInv = upg.getUpgrades(stack);
+                upgInv.forEach(inv::placeItemBackInInventory);
+            }
+
+            return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
+        }
+
+        if (isDisabled(stack)) {
             if (level.isClientSide) {
                 player.displayClientMessage(Component.translatable(disabledMessage), true);
             }
-            return InteractionResultHolder.fail(itemStack);
+            return InteractionResultHolder.fail(stack);
         }
+
         if (level.isClientSide) {
-            int freq = getFrequency(itemStack);
-            FrequencyScope scope = getScope(itemStack);
-            int transferMode = getTransferMode(itemStack);
+            int freq = getFrequency(stack);
+            FrequencyScope scope = getScope(stack);
+            int transferMode = getTransferMode(stack);
             EnderDiskFrequencyScreen.open(freq, scope, transferMode);
-        } else if (player instanceof ServerPlayer serverPlayer) {
-            resolveAndCacheTeamInfo(itemStack, serverPlayer);
+        } else if (player instanceof ServerPlayer sp) {
+            resolveAndCacheTeamInfo(stack, sp);
         }
-        return InteractionResultHolder.sidedSuccess(itemStack, level.isClientSide());
+        return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
     }
 
     public boolean isDisabled(ItemStack stack) {

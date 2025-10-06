@@ -24,6 +24,8 @@
   "item.enderdrives.ender_storage_component_256k": "256k Ender Storage Component",
   "item.enderdrives.ender_storage_component_4k": "4k Ender Storage Component",
   "item.enderdrives.ender_storage_component_64k": "64k Ender Storage Component",
+  "item.enderdrives.ender_item_housing": "Ender Item Housing",
+  "item.enderdrives.ender_fluid_housing": "Ender Fluid Housing",
   "item.enderdrives.tape_disk": "Tape Disk Item Storage Cell",
   "key.categories.enderdrives": "EnderDrives",
   "screen.enderdrives.frequency": "EnderDisk Frequency",

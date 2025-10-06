@@ -44,6 +44,9 @@ public class ItemInit {
     public static final DeferredHolder<Item, Item> ENDER_STORAGE_COMPONENT_64K = ITEMS.register("ender_storage_component_64k", () -> new Item(new Item.Properties()) {});
     public static final DeferredHolder<Item, Item> ENDER_STORAGE_COMPONENT_256K = ITEMS.register("ender_storage_component_256k", () -> new Item(new Item.Properties()) {});
 
+    public static final DeferredHolder<Item, Item> ENDER_ITEM_HOUSING = ITEMS.register("ender_item_housing", () -> new Item(new Item.Properties()) {});
+    public static final DeferredHolder<Item, Item> ENDER_FLUID_HOUSING = ITEMS.register("ender_fluid_housing", () -> new Item(new Item.Properties()) {});
+
     public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);
     }
