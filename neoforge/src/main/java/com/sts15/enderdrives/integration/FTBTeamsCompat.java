@@ -1,6 +1,6 @@
 package com.sts15.enderdrives.integration;
 
-import com.sts15.enderdrives.items.EnderDiskItem;
+import com.sts15.enderdrives.items.AbstractEnderDiskItem;
 import dev.ftb.mods.ftbteams.api.FTBTeamsAPI;
 import dev.ftb.mods.ftbteams.api.TeamManager;
 import dev.ftb.mods.ftbteams.api.property.TeamProperties;
@@ -10,6 +10,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.CustomData;
+
 import java.util.UUID;
 
 public class FTBTeamsCompat {
@@ -24,8 +25,8 @@ public class FTBTeamsCompat {
             UUID ownerUUID = team.getOwner();
             String displayName = team.getProperty(TeamProperties.DISPLAY_NAME);
             String teamId = ownerUUID.toString();
-            EnderDiskItem.setTeamInfo(stack, teamId, displayName != null ? displayName : "Unknown");
-            EnderDiskItem.setOwnerUUID(stack, ownerUUID);
+            AbstractEnderDiskItem.setTeamInfo(stack, teamId, displayName != null ? displayName : "Unknown");
+            AbstractEnderDiskItem.setOwnerUUID(stack, ownerUUID);
         });
     }
 
@@ -40,8 +41,8 @@ public class FTBTeamsCompat {
             UUID ownerUUID = team.getOwner();
             String displayName = team.getProperty(TeamProperties.DISPLAY_NAME);
             String teamId = ownerUUID.toString();
-            EnderDiskItem.setTeamId(stack, teamId);
-            EnderDiskItem.setOwnerUUID(stack, ownerUUID);
+            AbstractEnderDiskItem.setTeamId(stack, teamId);
+            AbstractEnderDiskItem.setOwnerUUID(stack, ownerUUID);
 
             stack.update(DataComponents.CUSTOM_DATA, CustomData.EMPTY, oldData -> {
                 CompoundTag tag = oldData.copyTag();
