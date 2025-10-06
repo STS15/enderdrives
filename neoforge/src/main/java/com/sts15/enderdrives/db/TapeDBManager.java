@@ -63,7 +63,6 @@ public class TapeDBManager {
         }, executor);
     }
 
-
     private static void notifyAE2StorageChanged(UUID diskId) {
         // TODO: AE2 storage refresh hook (if needed)
     }
@@ -172,7 +171,6 @@ public class TapeDBManager {
             flush(diskId, cache);
         }
     }
-
 
     public static void flushAll() {
         for (var entry : activeCaches.entrySet()) {

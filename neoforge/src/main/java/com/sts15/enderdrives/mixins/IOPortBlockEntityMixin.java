@@ -20,6 +20,7 @@ import com.sts15.enderdrives.db.EnderDBManager;
 import com.sts15.enderdrives.inventory.EnderDiskInventory;
 import com.sts15.enderdrives.inventory.TapeDiskInventory;
 import com.sts15.enderdrives.items.EnderDiskItem;
+import com.sts15.enderdrives.items.EnderFluidDiskItem;
 import com.sts15.enderdrives.items.TapeDiskItem;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -179,42 +180,81 @@ public abstract class IOPortBlockEntityMixin {
     private void enderdrives$preventSameFrequencyTransfer(IGridNode node, int ticksSinceLastCall, CallbackInfoReturnable<TickRateModulation> cir) {
         IGrid grid = node.getGrid();
         if (grid == null) return;
+
         Level level = ((IOPortBlockEntity)(Object)this).getLevel();
         BlockPos pos = ((IOPortBlockEntity)(Object)this).getBlockPos();
 
         for (DriveBlockEntity drive : grid.getMachines(DriveBlockEntity.class)) {
             for (int j = 0; j < drive.getCellCount(); j++) {
                 ItemStack driveStack = drive.getInternalInventory().getStackInSlot(j);
-                if (!(driveStack.getItem() instanceof EnderDiskItem)) continue;
-                int driveFreq = EnderDiskItem.getFrequency(driveStack);
-                String driveScope = EnderDiskItem.getSafeScopePrefix(driveStack);
 
+                final boolean driveIsItem  = driveStack.getItem() instanceof EnderDiskItem;
+                final boolean driveIsFluid = driveStack.getItem() instanceof EnderFluidDiskItem;
+                if (!driveIsItem && !driveIsFluid) continue;
+
+                final int driveFreq;
+                final String driveScope;
+                if (driveIsItem) {
+                    driveFreq  = EnderDiskItem.getFrequency(driveStack);
+                    driveScope = EnderDiskItem.getSafeScopePrefix(driveStack);
+                } else { // fluid
+                    driveFreq  = EnderFluidDiskItem.getFrequency(driveStack);
+                    driveScope = EnderFluidDiskItem.getSafeScopePrefix(driveStack);
+                }
+
+                // ---- inputs (same type only)
                 for (int i = 0; i < inputCells.size(); i++) {
                     ItemStack inputStack = inputCells.getStackInSlot(i);
-                    if (!(inputStack.getItem() instanceof EnderDiskItem)) continue;
-                    int inputFreq = EnderDiskItem.getFrequency(inputStack);
-                    String inputScope = EnderDiskItem.getSafeScopePrefix(inputStack);
-                    if (inputFreq == driveFreq && inputScope.equals(driveScope)) {
-                        enderdrives$playLoopWarning(level, pos);
-                        cir.setReturnValue(TickRateModulation.IDLE);
-                        return;
+
+                    if (driveIsItem) {
+                        if (!(inputStack.getItem() instanceof EnderDiskItem)) continue;
+                        int inputFreq = EnderDiskItem.getFrequency(inputStack);
+                        String inputScope = EnderDiskItem.getSafeScopePrefix(inputStack);
+                        if (inputFreq == driveFreq && inputScope.equals(driveScope)) {
+                            enderdrives$playLoopWarning(level, pos);
+                            cir.setReturnValue(TickRateModulation.IDLE);
+                            return;
+                        }
+                    } else { // driveIsFluid
+                        if (!(inputStack.getItem() instanceof EnderFluidDiskItem)) continue;
+                        int inputFreq = EnderFluidDiskItem.getFrequency(inputStack);
+                        String inputScope = EnderFluidDiskItem.getSafeScopePrefix(inputStack);
+                        if (inputFreq == driveFreq && inputScope.equals(driveScope)) {
+                            enderdrives$playLoopWarning(level, pos);
+                            cir.setReturnValue(TickRateModulation.IDLE);
+                            return;
+                        }
                     }
                 }
 
+                // ---- outputs (same type only)
                 for (int i = 0; i < outputCells.size(); i++) {
                     ItemStack outputStack = outputCells.getStackInSlot(i);
-                    if (!(outputStack.getItem() instanceof EnderDiskItem)) continue;
-                    int outputFreq = EnderDiskItem.getFrequency(outputStack);
-                    String outputScope = EnderDiskItem.getSafeScopePrefix(outputStack);
-                    if (outputFreq == driveFreq && outputScope.equals(driveScope)) {
-                        enderdrives$playLoopWarning(level, pos);
-                        cir.setReturnValue(TickRateModulation.IDLE);
-                        return;
+
+                    if (driveIsItem) {
+                        if (!(outputStack.getItem() instanceof EnderDiskItem)) continue;
+                        int outputFreq = EnderDiskItem.getFrequency(outputStack);
+                        String outputScope = EnderDiskItem.getSafeScopePrefix(outputStack);
+                        if (outputFreq == driveFreq && outputScope.equals(driveScope)) {
+                            enderdrives$playLoopWarning(level, pos);
+                            cir.setReturnValue(TickRateModulation.IDLE);
+                            return;
+                        }
+                    } else { // driveIsFluid
+                        if (!(outputStack.getItem() instanceof EnderFluidDiskItem)) continue;
+                        int outputFreq = EnderFluidDiskItem.getFrequency(outputStack);
+                        String outputScope = EnderFluidDiskItem.getSafeScopePrefix(outputStack);
+                        if (outputFreq == driveFreq && outputScope.equals(driveScope)) {
+                            enderdrives$playLoopWarning(level, pos);
+                            cir.setReturnValue(TickRateModulation.IDLE);
+                            return;
+                        }
                     }
                 }
             }
         }
     }
+
 
     @Unique
     private void enderdrives$playLoopWarning(Level level, BlockPos pos) {

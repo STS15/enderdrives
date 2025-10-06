@@ -148,10 +148,73 @@ public class EnderFluidDBManager {
         }
     }
 
-    /** Current stored amount (mB) for a specific fluid key. */
+    /** Current stored amount (mB) for a specific fluid key, with semantic fallback + merge. */
     public static long getFluidAmount(String scopePrefix, int freq, byte[] keyBytes) {
         AEKey key = new AEKey(scopePrefix, freq, keyBytes);
-        return dbMap.getOrDefault(key, new StoredEntry(0L, null)).count();
+
+        // Fast path: direct bytes lookup
+        StoredEntry direct = dbMap.get(key);
+        long directAmt = direct == null ? 0L : direct.count();
+        if (directAmt > 0) return directAmt;
+
+        // Fallback: compare by AEFluidKey equality
+        AEFluidKey requestedAek = null;
+        try {
+            FluidStack s = deserializeFluidStackFromBytes(keyBytes);
+            if (!s.isEmpty()) requestedAek = AEFluidKey.of(s);
+        } catch (Exception ignored) {}
+
+        if (requestedAek == null) return 0L;
+
+        // Search the frequency range for legacy/alternate-byte entries
+        AEKey from = new AEKey(scopePrefix, freq, new byte[0]);
+        AEKey to   = new AEKey(scopePrefix, freq + 1, new byte[0]);
+
+        long sum = 0L;
+        List<AEKey> keysToMerge = new ArrayList<>();
+
+        synchronized (commitLock) {
+            NavigableMap<AEKey, StoredEntry> sub = dbMap.subMap(from, true, to, false);
+            for (Map.Entry<AEKey, StoredEntry> e : sub.entrySet()) {
+                StoredEntry stored = e.getValue();
+                AEFluidKey storedAek = stored.aeKey();
+
+                // Lazily recover AEFluidKey if missing
+                if (storedAek == null) {
+                    try {
+                        FluidStack s2 = deserializeFluidStackFromBytes(e.getKey().itemBytes());
+                        if (!s2.isEmpty()) storedAek = AEFluidKey.of(s2);
+                    } catch (Exception ignored) {}
+                }
+
+                if (storedAek != null && storedAek.equals(requestedAek)) {
+                    sum += stored.count();
+                    keysToMerge.add(e.getKey());
+                }
+            }
+
+            if (sum > 0) {
+                // Pick a canonical key for this fluid: normalize to an identity byte[] (e.g. 1 mB)
+                byte[] canonicalBytes =
+                        com.sts15.enderdrives.inventory.EnderFluidDiskInventory
+                                .serializeFluidStackToBytes(requestedAek.toStack(1));
+
+                AEKey canonicalKey = new AEKey(scopePrefix, freq, canonicalBytes);
+                long existing = dbMap.getOrDefault(canonicalKey, new StoredEntry(0L, requestedAek)).count();
+                dbMap.put(canonicalKey, new StoredEntry(existing + sum, requestedAek));
+
+                // Remove legacy/alternate keys
+                for (AEKey k : keysToMerge) {
+                    if (!Arrays.equals(k.itemBytes(), canonicalBytes)) {
+                        dbMap.remove(k);
+                    }
+                }
+
+                dirty = true;
+            }
+        }
+
+        return sum;
     }
 
     /** Number of unique fluid types including pending (range by scope|freq). */
@@ -189,21 +252,56 @@ public class EnderFluidDBManager {
         return dbMap.subMap(from, true, to, false).size();
     }
 
-    /** Query all fluids (AEFluidKey + count) for a scope|freq. */
+    /** Query all fluids (AEFluidKey + count) for a scope|freq, with lazy AEFluidKey repair. */
     public static List<FluidKeyCacheEntry> queryFluidsByFrequency(String scopePrefix, int freq) {
         AEKey lo = new AEKey(scopePrefix, freq,   new byte[0]);
         AEKey hi = new AEKey(scopePrefix, freq+1, new byte[0]);
-        var committed = dbMap.subMap(lo, true, hi, false);
+        NavigableMap<AEKey, StoredEntry> committed = dbMap.subMap(lo, true, hi, false);
 
-        var result = new java.util.ArrayList<FluidKeyCacheEntry>();
+        List<FluidKeyCacheEntry> result = new ArrayList<>();
+        List<AEKey> keysToUpdate = new ArrayList<>();
+        Map<AEKey, AEFluidKey> recovered = new HashMap<>();
+
         for (var e : committed.entrySet()) {
             long cnt = e.getValue().count();
             if (cnt <= 0) continue;
+
+            AEKey k = e.getKey();
             AEFluidKey aek = e.getValue().aeKey();
+
+            if (aek == null) {
+                // Try to recover AEFluidKey lazily from stored bytes
+                try {
+                    FluidStack s = deserializeFluidStackFromBytes(k.itemBytes());
+                    if (!s.isEmpty()) {
+                        AEFluidKey derived = AEFluidKey.of(s);
+                        aek = derived;
+                        keysToUpdate.add(k);
+                        recovered.put(k, derived);
+                    }
+                } catch (Exception ignored) {}
+            }
+
             if (aek != null) {
-                result.add(new FluidKeyCacheEntry(e.getKey(), aek, cnt));
+                result.add(new FluidKeyCacheEntry(k, aek, cnt));
             }
         }
+
+        // Write back any recovered AEFluidKey so future calls are fast/consistent.
+        if (!keysToUpdate.isEmpty()) {
+            synchronized (commitLock) {
+                for (AEKey k : keysToUpdate) {
+                    StoredEntry old = dbMap.get(k);
+                    if (old == null) continue;
+                    AEFluidKey newAek = recovered.get(k);
+                    if (newAek != null) {
+                        dbMap.put(k, new StoredEntry(old.count(), newAek));
+                        dirty = true;
+                    }
+                }
+            }
+        }
+
         return result;
     }
 

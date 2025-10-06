@@ -9,6 +9,7 @@ import appeng.api.stacks.AEKeyType;
 import appeng.api.stacks.KeyCounter;
 import appeng.api.storage.cells.CellState;
 import appeng.api.storage.cells.ICellHandler;
+import appeng.api.storage.cells.ISaveProvider;
 import appeng.api.storage.cells.StorageCell;
 import appeng.blockentity.storage.DriveBlockEntity;
 import appeng.items.contents.CellConfig;
@@ -44,7 +45,7 @@ public class EnderDiskInventory implements StorageCell {
     private static final ThreadLocal<ByteArrayOutputStream> LOCAL_BAOS = ThreadLocal.withInitial(() -> new ByteArrayOutputStream(512));
     private static final ThreadLocal<DataOutputStream> LOCAL_DOS = ThreadLocal.withInitial(() -> new DataOutputStream(LOCAL_BAOS.get()));
 
-    public EnderDiskInventory(ItemStack stack) {
+    public EnderDiskInventory(ItemStack stack, @Nullable ISaveProvider host) {
         if (!(stack.getItem() instanceof EnderDiskItem item)) {
             throw new IllegalArgumentException("Item is not an EnderDisk!");
         }
@@ -245,8 +246,8 @@ public class EnderDiskInventory implements StorageCell {
 
     private static class Handler implements ICellHandler {
         @Override public boolean isCell(ItemStack is) { return is != null && is.getItem() instanceof EnderDiskItem; }
-        @Override public @Nullable StorageCell getCellInventory(ItemStack is, @Nullable appeng.api.storage.cells.ISaveProvider host) {
-            return isCell(is) ? new EnderDiskInventory(is) : null;
+        @Override public @Nullable StorageCell getCellInventory(ItemStack is, @Nullable ISaveProvider host) {
+            return isCell(is) ? new EnderDiskInventory(is, host) : null;
         }
     }
 }
