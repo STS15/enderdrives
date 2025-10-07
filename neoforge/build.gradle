@@ -176,6 +176,7 @@ processResources {
         expand "version": project.version
     }
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    exclude '.cache'
 }
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }
