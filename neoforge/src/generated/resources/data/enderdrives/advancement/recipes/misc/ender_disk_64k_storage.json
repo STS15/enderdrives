@@ -1,0 +1,43 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_ender_item_housing": {
+      "conditions": {
+        "items": [
+          {
+            "items": "enderdrives:ender_item_housing"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_ender_storage_component_64k": {
+      "conditions": {
+        "items": [
+          {
+            "items": "enderdrives:ender_storage_component_64k"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "enderdrives:ender_disk_64k_storage"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_ender_item_housing",
+      "has_ender_storage_component_64k"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "enderdrives:ender_disk_64k_storage"
+    ]
+  }
+}
