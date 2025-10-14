@@ -1,8 +1,6 @@
 package com.sts15.enderdrives.items;
 
-import appeng.api.implementations.menuobjects.IMenuItem;
 import appeng.api.stacks.AEKeyType;
-import appeng.api.storage.cells.ICellWorkbenchItem;
 import com.sts15.enderdrives.db.ClientFluidDiskCache;
 import com.sts15.enderdrives.db.FluidDiskTypeInfo;
 import com.sts15.enderdrives.network.NetworkHandler;
@@ -18,7 +16,7 @@ import java.util.List;
  * - Uses AEKeyType.fluids() for partitioning/workbench config
  * - Shares frequency/scope/owner/team/transfer-mode semantics with item disks
  */
-public class EnderFluidDiskItem extends AbstractEnderDiskItem implements ICellWorkbenchItem, IMenuItem {
+public class EnderFluidDiskItem extends AbstractEnderDiskItem {
 
     public EnderFluidDiskItem(Properties props, java.util.function.Supplier<Integer> typeLimit) {
         super(props, typeLimit, AEKeyType.fluids(), "tooltip.enderdrives.fluidenderdisk.disabled");

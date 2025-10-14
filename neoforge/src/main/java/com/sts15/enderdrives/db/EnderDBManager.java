@@ -1,25 +1,26 @@
 package com.sts15.enderdrives.db;
 
 import appeng.api.stacks.AEItemKey;
+import com.sts15.enderdrives.Constants;
 import com.sts15.enderdrives.config.serverConfig;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.storage.LevelResource;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+
 import java.io.*;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+
 import static com.sts15.enderdrives.inventory.EnderDiskInventory.deserializeItemStackFromBytes;
 
-public class EnderDBManager {
+public class EnderDBManager extends AbstractEnderDBManager {
 
-    private static final Logger LOGGER = LogManager.getLogger("EnderDrives");
     public static final ConcurrentSkipListMap<AEKey, StoredEntry> dbMap = new ConcurrentSkipListMap<>();
     private static final BlockingQueue<byte[]> walQueue = new LinkedBlockingQueue<>();
     private static final ConcurrentHashMap<String, CachedCount> itemCountCache = new ConcurrentHashMap<>();
@@ -37,9 +38,13 @@ public class EnderDBManager {
     private static final long MAX_WAL_COMMIT_MS       = serverConfig.END_DB_MAX_COMMIT_INTERVAL_MS.get();
     private static final long MIN_DB_COMMIT_MS        = serverConfig.END_DB_MIN_DB_COMMIT_INTERVAL_MS.get();
     private static final long MAX_DB_COMMIT_MS        = serverConfig.END_DB_MAX_DB_COMMIT_INTERVAL_MS.get();
-    private static final boolean DEBUG_LOG            = serverConfig.END_DB_DEBUG_LOG.get();
+
     private static long lastWalCommitTime = System.currentTimeMillis();
     private static long lastDbCommitTime  = System.currentTimeMillis();
+
+    public EnderDBManager() {
+        super("EnderDBManager", walWriter);
+    }
 
 // ==== Public API ====
 
@@ -495,11 +500,11 @@ public class EnderDBManager {
 
                         Thread.sleep(100);
                     } catch (Exception e) {
-                        LOGGER.error("Background commit error", e);
+                        Constants.LOG.error("Background commit error", e);
                     }
                 }
             } catch (Exception e) {
-                LOGGER.error("[EnderDB] WAL Commit thread crashed", e);
+                Constants.LOG.error("[EnderDB] WAL Commit thread crashed", e);
             }
         }, "EnderDB-CommitThread");
 
@@ -579,7 +584,7 @@ public class EnderDBManager {
             }
             walWriter.flush();
         } catch (IOException e) {
-            LOGGER.error("Error flushing WAL queue during shutdown", e);
+            Constants.LOG.error("Error flushing WAL queue during shutdown", e);
         }
     }
 
@@ -716,28 +721,6 @@ public class EnderDBManager {
 // ==== Internal DB Tools ====
 
     /**
-     * Calculates a checksum for a byte array using CRC32.
-     *
-     * @param data The byte array to checksum.
-     * @return The CRC32 value.
-     */
-    private static long checksum(byte[] data) {
-        CRC32 crc = new CRC32();
-        crc.update(data);
-        return crc.getValue();
-    }
-
-    /**
-     * Logs debug messages to console if DEBUG_LOG is enabled.
-     *
-     * @param format The message format string.
-     * @param args   Format arguments.
-     */
-    private static void log(String format, Object... args) {
-        if (DEBUG_LOG) LOGGER.info("[EnderDBManager] " + format, args);
-    }
-
-    /**
      * Migrates any legacy records with malformed or missing scope names to the "global" scope.
      */
     private static void migrateOldRecords() {
@@ -788,7 +771,7 @@ public class EnderDBManager {
             if (currentWAL != null && currentWAL.exists()) {
                 zipFile(currentWAL, zos);
             }
-            LOGGER.info("Backed up existing database to {} due to mod version change.", backupZip.getName());
+            Constants.LOG.info("Backed up existing database to {} due to mod version change.", backupZip.getName());
         } catch (IOException e) {
             e.printStackTrace();
         }

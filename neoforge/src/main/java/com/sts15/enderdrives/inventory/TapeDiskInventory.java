@@ -4,22 +4,23 @@ package com.sts15.enderdrives.inventory;
 import appeng.api.config.Actionable;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.security.IActionSource;
-import appeng.api.stacks.*;
+import appeng.api.stacks.AEItemKey;
 import appeng.api.stacks.AEKey;
-import appeng.api.storage.cells.*;
+import appeng.api.stacks.AEKeyType;
+import appeng.api.stacks.KeyCounter;
+import appeng.api.storage.cells.CellState;
+import appeng.api.storage.cells.ICellHandler;
+import appeng.api.storage.cells.ISaveProvider;
+import appeng.api.storage.cells.StorageCell;
 import appeng.blockentity.storage.DriveBlockEntity;
-import appeng.items.contents.CellConfig;
-import appeng.util.ConfigInventory;
-import com.sts15.enderdrives.db.*;
+import com.sts15.enderdrives.db.StoredEntry;
+import com.sts15.enderdrives.db.TapeKey;
 import com.sts15.enderdrives.integration.DriveBlockEntityAccessor;
-import com.sts15.enderdrives.items.EnderDiskItem;
 import com.sts15.enderdrives.items.TapeDiskItem;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.*;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
@@ -28,18 +29,16 @@ import java.util.concurrent.ConcurrentMap;
 
 import static com.sts15.enderdrives.db.TapeDBManager.*;
 
-public class TapeDiskInventory implements StorageCell {
+public class TapeDiskInventory extends AbstractEnderDiskInventory {
 
-    private static final Logger LOGGER = LogManager.getLogger("EnderDrives");
     public static final ICellHandler HANDLER = new Handler();
     private final boolean disabled;
-    private final ItemStack stack;
     private final UUID tapeId;
     private final int typeLimit;
 
     public TapeDiskInventory(ItemStack stack) {
+        super(stack, AEKeyType.items(), "TapeDiskInventory");
         if (!(stack.getItem() instanceof TapeDiskItem item)) throw new IllegalArgumentException("Not a TapeDisk.");
-        this.stack = stack;
         this.tapeId = TapeDiskItem.getOrCreateTapeId(stack);
         this.typeLimit = item.getTypeLimit(stack);
         this.disabled = item.isDisabled(stack);
@@ -294,9 +293,6 @@ public class TapeDiskInventory implements StorageCell {
     }
 
     @Override
-    public void persist() {}
-
-    @Override
     public Component getDescription() {
         return Component.literal("Tape Disk " + tapeId.toString().substring(0, 8));
     }
@@ -313,15 +309,6 @@ public class TapeDiskInventory implements StorageCell {
             filtered.remove("tag");
         }
         return !filtered.isEmpty();
-    }
-
-    private boolean passesFilter(AEKey key) {
-        ConfigInventory config = CellConfig.create(Set.of(AEKeyType.items()), stack);
-        for (int i = 0; i < config.size(); i++) {
-            AEKey filterKey = config.getKey(i);
-            if (filterKey != null && filterKey.equals(key)) return true;
-        }
-        return config.keySet().isEmpty();
     }
 
     private static final ConcurrentMap<UUID, Object> DISK_LOCKS = new ConcurrentHashMap<>();

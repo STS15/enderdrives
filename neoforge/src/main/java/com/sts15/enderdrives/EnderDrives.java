@@ -13,10 +13,7 @@ import com.sts15.enderdrives.init.CreativeTabRegistry;
 import com.sts15.enderdrives.inventory.EnderDiskInventory;
 import com.sts15.enderdrives.inventory.EnderFluidDiskInventory;
 import com.sts15.enderdrives.inventory.TapeDiskInventory;
-import com.sts15.enderdrives.items.EnderDiskItem;
-import com.sts15.enderdrives.items.EnderFluidDiskItem;
-import com.sts15.enderdrives.items.ItemInit;
-import com.sts15.enderdrives.items.TapeDiskItem;
+import com.sts15.enderdrives.items.*;
 import com.sts15.enderdrives.network.NetworkHandler;
 import com.sts15.enderdrives.network.packet.SyncConfigPacket;
 import com.sts15.enderdrives.network.packet.SyncDisabledDrivesPacket;
@@ -167,8 +164,13 @@ public class EnderDrives {
         public static void registerColorHandlers(RegisterColorHandlersEvent.Item event) {
             event.register((stack, tintIndex) -> {
                         if (tintIndex == 1) {
-                            if (stack.getItem() instanceof EnderDiskItem) {
-                                CellState state = EnderDiskInventory.getCellStateForStack(stack);
+                            if (stack.getItem() instanceof AbstractEnderDiskItem) {
+                                CellState state;
+                                if (stack.getItem() instanceof EnderDiskItem) {
+                                    state = EnderDiskInventory.getCellStateForStack(stack);
+                                } else {
+                                    state = EnderFluidDiskInventory.getCellStateForStack(stack);
+                                }
                                 return switch (state) {
                                     case ABSENT -> 0x000000;
                                     case EMPTY -> 0x00FF00;

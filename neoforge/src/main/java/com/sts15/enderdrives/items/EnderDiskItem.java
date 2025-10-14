@@ -1,8 +1,6 @@
 package com.sts15.enderdrives.items;
 
-import appeng.api.implementations.menuobjects.IMenuItem;
 import appeng.api.stacks.AEKeyType;
-import appeng.api.storage.cells.ICellWorkbenchItem;
 import com.sts15.enderdrives.db.ClientDiskCache;
 import com.sts15.enderdrives.db.DiskTypeInfo;
 import com.sts15.enderdrives.network.NetworkHandler;
@@ -14,7 +12,7 @@ import net.neoforged.api.distmarker.OnlyIn;
 import java.util.List;
 import java.util.function.Supplier;
 
-public class EnderDiskItem extends AbstractEnderDiskItem implements ICellWorkbenchItem, IMenuItem {
+public class EnderDiskItem extends AbstractEnderDiskItem {
 
     public EnderDiskItem(Properties props, Supplier<Integer> typeLimit) {
         super(props, typeLimit, AEKeyType.items(), "tooltip.enderdrives.enderdisk.disabled");
