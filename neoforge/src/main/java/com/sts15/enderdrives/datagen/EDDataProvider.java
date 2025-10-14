@@ -2,11 +2,11 @@ package com.sts15.enderdrives.datagen;
 
 import net.minecraft.data.CachedOutput;
 import net.minecraft.data.DataProvider;
-
 import org.jetbrains.annotations.NotNull;
 
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 public class EDDataProvider implements DataProvider {
 

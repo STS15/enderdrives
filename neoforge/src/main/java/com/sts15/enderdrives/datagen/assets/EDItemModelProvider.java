@@ -1,17 +1,16 @@
 package com.sts15.enderdrives.datagen.assets;
 
+import com.sts15.enderdrives.items.ItemInit;
+import net.minecraft.data.PackOutput;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Item;
 import net.neoforged.neoforge.client.model.generators.ItemModelProvider;
 import net.neoforged.neoforge.client.model.generators.ModelFile;
 import net.neoforged.neoforge.common.data.ExistingFileHelper;
 import net.neoforged.neoforge.registries.DeferredHolder;
 
-import net.minecraft.data.PackOutput;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.Item;
-
-import com.sts15.enderdrives.items.ItemInit;
-
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
 
 import static com.sts15.enderdrives.Constants.MOD_ID;
 

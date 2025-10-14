@@ -1,28 +1,29 @@
 package com.sts15.enderdrives.datagen.data;
 
+import appeng.api.util.AEColor;
+import appeng.core.definitions.AEBlocks;
+import appeng.core.definitions.AEItems;
 import appeng.recipes.game.StorageCellDisassemblyRecipe;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.ItemLike;
-import net.neoforged.neoforge.common.conditions.IConditionBuilder;
-import net.neoforged.neoforge.registries.DeferredHolder;
+import com.glodblock.github.extendedae.common.EAESingletons;
+import com.sts15.enderdrives.items.ItemInit;
+import gripe._90.megacells.definition.MEGAItems;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.data.PackOutput;
 import net.minecraft.data.recipes.RecipeCategory;
 import net.minecraft.data.recipes.RecipeOutput;
 import net.minecraft.data.recipes.RecipeProvider;
 import net.minecraft.data.recipes.ShapedRecipeBuilder;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ItemLike;
+import net.neoforged.neoforge.common.conditions.IConditionBuilder;
+import net.neoforged.neoforge.registries.DeferredHolder;
 import net.pedroksl.advanced_ae.common.definitions.AAEItems;
-import com.glodblock.github.extendedae.common.EAESingletons;
-import com.sts15.enderdrives.items.ItemInit;
 import org.jetbrains.annotations.NotNull;
-import appeng.api.util.AEColor;
-import appeng.core.definitions.AEBlocks;
-import appeng.core.definitions.AEItems;
-import gripe._90.megacells.definition.MEGAItems;
-import java.util.concurrent.*;
+
+import java.util.concurrent.CompletableFuture;
 
 public class EDRecipeProvider extends RecipeProvider implements IConditionBuilder {
 

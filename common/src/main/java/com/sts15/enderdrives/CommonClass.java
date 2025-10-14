@@ -1,8 +1,5 @@
 package com.sts15.enderdrives;
 
-import com.sts15.enderdrives.platform.Services;
-
-
 public class CommonClass {
 
     public static void init() {

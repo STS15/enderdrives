@@ -34,6 +34,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.neoforged.fml.ModList;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;

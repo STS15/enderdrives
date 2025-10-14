@@ -3,7 +3,6 @@ package com.sts15.enderdrives.network.packet;
 import appeng.api.stacks.AEFluidKey;
 import appeng.api.stacks.AEKey;
 import com.sts15.enderdrives.Constants;
-import com.sts15.enderdrives.db.AEKeyCacheEntry;
 import com.sts15.enderdrives.db.EnderFluidDBManager;
 import com.sts15.enderdrives.db.FluidKeyCacheEntry;
 import com.sts15.enderdrives.network.NetworkHandler;
