@@ -8,7 +8,9 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import org.jetbrains.annotations.NotNull;
+
 import java.util.UUID;
+
 import static com.sts15.enderdrives.Constants.MOD_ID;
 
 public class NetworkHandler {

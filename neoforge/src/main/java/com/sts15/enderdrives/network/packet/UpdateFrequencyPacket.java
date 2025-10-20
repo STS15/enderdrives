@@ -3,7 +3,6 @@ package com.sts15.enderdrives.network.packet;
 import com.sts15.enderdrives.items.EnderDiskItem;
 import com.sts15.enderdrives.items.EnderFluidDiskItem;
 import com.sts15.enderdrives.screen.FrequencyScope;
-import com.sts15.enderdrives.screen.TransferMode;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;

@@ -9,9 +9,8 @@ import appeng.items.contents.CellConfig;
 import appeng.menu.locator.ItemMenuHostLocator;
 import appeng.util.ConfigInventory;
 import com.sts15.enderdrives.client.ClientTapeCache;
-import com.sts15.enderdrives.network.NetworkHandler;
 import com.sts15.enderdrives.config.serverConfig;
-import com.sts15.enderdrives.network.packet.RequestTapeTypeCountPacket;
+import com.sts15.enderdrives.network.NetworkHandler;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
@@ -31,7 +30,11 @@ import net.neoforged.api.distmarker.OnlyIn;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import java.io.*;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.util.*;
 import java.util.function.Supplier;
 

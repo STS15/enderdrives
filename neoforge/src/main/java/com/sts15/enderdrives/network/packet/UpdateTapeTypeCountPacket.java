@@ -7,7 +7,9 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+
 import java.util.UUID;
+
 import static com.sts15.enderdrives.Constants.MOD_ID;
 
 public record UpdateTapeTypeCountPacket(UUID tapeId, int typeCount, long byteCount) implements CustomPacketPayload {

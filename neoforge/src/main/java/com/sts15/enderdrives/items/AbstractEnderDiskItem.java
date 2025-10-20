@@ -34,6 +34,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.neoforged.fml.ModList;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -263,7 +264,7 @@ public abstract class AbstractEnderDiskItem extends Item implements ICellWorkben
             String plural = (partitionCount == 1) ? "" : "s";
             if (stack.getItem() instanceof EnderDiskItem) {
                 lines.add(Component.translatable("tooltip.enderdrives.partitioned_item", partitionCount, plural));
-            } else {
+            } else if (stack.getItem() instanceof EnderFluidDiskItem) {
                 lines.add(Component.translatable("tooltip.enderdrives.partitioned_fluid", partitionCount, plural));
             }
 

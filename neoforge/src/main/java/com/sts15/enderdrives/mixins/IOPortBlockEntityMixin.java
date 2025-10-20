@@ -16,8 +16,8 @@ import appeng.api.storage.cells.StorageCell;
 import appeng.blockentity.storage.DriveBlockEntity;
 import appeng.blockentity.storage.IOPortBlockEntity;
 import appeng.util.inv.AppEngInternalInventory;
-import com.sts15.enderdrives.db.EnderDBManager;
-import com.sts15.enderdrives.inventory.EnderDiskInventory;
+import com.sts15.enderdrives.db.AbstractEnderDBManager;
+import com.sts15.enderdrives.inventory.AbstractEnderDiskInventory;
 import com.sts15.enderdrives.inventory.TapeDiskInventory;
 import com.sts15.enderdrives.items.EnderDiskItem;
 import com.sts15.enderdrives.items.EnderFluidDiskItem;
@@ -29,6 +29,8 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -36,8 +38,7 @@ import org.spongepowered.asm.mixin.gen.Invoker;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+
 import java.util.Map;
 
 @Mixin(IOPortBlockEntity.class)
@@ -64,7 +65,7 @@ public abstract class IOPortBlockEntityMixin {
         }
 
         // 2) Ender disk sync
-        if (sourceInv instanceof EnderDiskInventory ed) {
+        if (sourceInv instanceof AbstractEnderDiskInventory ed) {
             long rem = enderdrives$transferOneTypeSynced(grid, ed, toMove);
             if (rem < toMove) {
                 cir.setReturnValue(rem);
@@ -133,12 +134,12 @@ public abstract class IOPortBlockEntityMixin {
         return budget;
     }
 
-    @Unique private long enderdrives$transferOneTypeSynced(IGrid grid, EnderDiskInventory src, long budget) {
+    @Unique private long enderdrives$transferOneTypeSynced(IGrid grid, AbstractEnderDiskInventory src, long budget) {
         KeyCounter kc = new KeyCounter(); src.getAvailableStacks(kc);
         if (kc.isEmpty()) return budget;
         MEStorage net = grid.getStorageService().getInventory();
         IEnergyService en = grid.getEnergyService();
-        EnderDBManager.flushWALQueue();
+        AbstractEnderDBManager.flushWALQueue();
         for (Map.Entry<AEKey, Long> e : kc) {
             AEKey key = e.getKey(); long have = e.getValue();
             long simExt = src.extract(key, have, Actionable.SIMULATE, mySrc);

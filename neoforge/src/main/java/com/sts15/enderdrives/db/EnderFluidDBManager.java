@@ -1,22 +1,24 @@
 package com.sts15.enderdrives.db;
 
 import appeng.api.stacks.AEFluidKey;
+import com.sts15.enderdrives.Constants;
 import com.sts15.enderdrives.config.serverConfig;
 import com.sts15.enderdrives.inventory.EnderFluidDiskInventory;
-import net.neoforged.neoforge.fluids.FluidStack;
 import net.minecraft.world.level.storage.LevelResource;
+import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+
 import java.io.*;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+
 import static com.sts15.enderdrives.inventory.EnderFluidDiskInventory.deserializeFluidStackFromBytes;
 
 /**
@@ -26,9 +28,8 @@ import static com.sts15.enderdrives.inventory.EnderFluidDiskInventory.deserializ
  *   - enderdrives_fluids.bin
  *   - enderdrives_fluids.wal
  */
-public class EnderFluidDBManager {
+public class EnderFluidDBManager extends AbstractEnderDBManager{
 
-    private static final Logger LOGGER = LogManager.getLogger("EnderDrives");
     public static final ConcurrentSkipListMap<AEKey, StoredEntry> dbMap = new ConcurrentSkipListMap<>();
     private static final BlockingQueue<byte[]> walQueue = new LinkedBlockingQueue<>();
     private static final ConcurrentHashMap<String, CachedCount> amountCache = new ConcurrentHashMap<>();
@@ -50,6 +51,10 @@ public class EnderFluidDBManager {
     private static final boolean DEBUG_LOG               = serverConfig.END_DB_DEBUG_LOG.get();
     private static long lastWalCommitTime = System.currentTimeMillis();
     private static long lastDbCommitTime  = System.currentTimeMillis();
+
+    public EnderFluidDBManager() {
+        super("EnderFluidDBManager", walWriter);
+    }
 
     // ==== Public API =================================================================================================
 
@@ -444,11 +449,11 @@ public class EnderFluidDBManager {
 
                         Thread.sleep(100);
                     } catch (Exception e) {
-                        LOGGER.error("Fluid background commit error", e);
+                        Constants.LOG.error("Fluid background commit error", e);
                     }
                 }
             } catch (Exception e) {
-                LOGGER.error("[EnderFluidDB] WAL Commit thread crashed", e);
+                Constants.LOG.error("[EnderFluidDB] WAL Commit thread crashed", e);
             }
         }, "EnderFluidDB-CommitThread");
 
@@ -511,7 +516,7 @@ public class EnderFluidDBManager {
             }
             walWriter.flush();
         } catch (IOException e) {
-            LOGGER.error("Error flushing fluid WAL queue during shutdown", e);
+            Constants.LOG.error("Error flushing fluid WAL queue during shutdown", e);
         }
     }
 
@@ -628,16 +633,6 @@ public class EnderFluidDBManager {
         } catch (EOFException ignored) {}
     }
 
-    private static long checksum(byte[] data) {
-        CRC32 crc = new CRC32();
-        crc.update(data);
-        return crc.getValue();
-    }
-
-    private static void log(String format, Object... args) {
-        if (DEBUG_LOG) LOGGER.info("[EnderFluidDB] " + format, args);
-    }
-
     private static void migrateOldRecords() {
         List<Map.Entry<AEKey, StoredEntry>> toMigrate = parallelCall(() ->
                 dbMap.entrySet().parallelStream()
@@ -682,7 +677,7 @@ public class EnderFluidDBManager {
         try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(backupZip))) {
             zipFile(dbFile, zos);
             if (currentWAL != null && currentWAL.exists()) zipFile(currentWAL, zos);
-            LOGGER.info("Backed up existing fluid database to {} due to mod version change.", backupZip.getName());
+            Constants.LOG.info("Backed up existing fluid database to {} due to mod version change.", backupZip.getName());
         } catch (IOException e) {
             e.printStackTrace();
         }

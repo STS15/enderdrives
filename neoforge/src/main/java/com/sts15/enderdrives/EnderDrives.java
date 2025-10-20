@@ -13,10 +13,7 @@ import com.sts15.enderdrives.init.CreativeTabRegistry;
 import com.sts15.enderdrives.inventory.EnderDiskInventory;
 import com.sts15.enderdrives.inventory.EnderFluidDiskInventory;
 import com.sts15.enderdrives.inventory.TapeDiskInventory;
-import com.sts15.enderdrives.items.EnderDiskItem;
-import com.sts15.enderdrives.items.EnderFluidDiskItem;
-import com.sts15.enderdrives.items.ItemInit;
-import com.sts15.enderdrives.items.TapeDiskItem;
+import com.sts15.enderdrives.items.*;
 import com.sts15.enderdrives.network.NetworkHandler;
 import com.sts15.enderdrives.network.packet.SyncConfigPacket;
 import com.sts15.enderdrives.network.packet.SyncDisabledDrivesPacket;
@@ -26,6 +23,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.Item;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.fml.common.Mod;
@@ -35,10 +33,11 @@ import net.neoforged.neoforge.client.event.RegisterColorHandlersEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
-import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+
 import java.util.Objects;
 import java.util.UUID;
+
 import static com.sts15.enderdrives.Constants.MOD_ID;
 
 @Mod(MOD_ID)
@@ -167,8 +166,13 @@ public class EnderDrives {
         public static void registerColorHandlers(RegisterColorHandlersEvent.Item event) {
             event.register((stack, tintIndex) -> {
                         if (tintIndex == 1) {
-                            if (stack.getItem() instanceof EnderDiskItem) {
-                                CellState state = EnderDiskInventory.getCellStateForStack(stack);
+                            if (stack.getItem() instanceof AbstractEnderDiskItem) {
+                                CellState state;
+                                if (stack.getItem() instanceof EnderDiskItem) {
+                                    state = EnderDiskInventory.getCellStateForStack(stack);
+                                } else {
+                                    state = EnderFluidDiskInventory.getCellStateForStack(stack);
+                                }
                                 return switch (state) {
                                     case ABSENT -> 0x000000;
                                     case EMPTY -> 0x00FF00;

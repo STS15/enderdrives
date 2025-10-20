@@ -14,7 +14,7 @@ import com.sts15.enderdrives.db.AEKeyCacheEntry;
 import com.sts15.enderdrives.db.EnderDBManager;
 import com.sts15.enderdrives.db.TapeDBManager;
 import com.sts15.enderdrives.inventory.EnderDiskInventory;
-import com.sts15.enderdrives.items.EnderDiskItem;
+import com.sts15.enderdrives.items.AbstractEnderDiskItem;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.component.DataComponents;
@@ -44,8 +44,8 @@ public class ModCommands {
                                             if (!validateFrequency(freq, source)) return 0;
 
                                             ItemStack heldItem = source.getPlayerOrException().getMainHandItem();
-                                            if (heldItem.getItem() instanceof EnderDiskItem) {
-                                                EnderDiskItem.setFrequency(heldItem, freq);
+                                            if (heldItem.getItem() instanceof AbstractEnderDiskItem) {
+                                                AbstractEnderDiskItem.setFrequency(heldItem, freq);
                                                 source.sendSuccess(() -> Component.literal("Frequency set to " + freq), true);
                                             } else {
                                                 source.sendFailure(Component.literal("Hold an EnderDisk in your hand."));
