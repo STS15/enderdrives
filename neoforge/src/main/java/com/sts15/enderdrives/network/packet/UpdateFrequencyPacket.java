@@ -1,8 +1,8 @@
 package com.sts15.enderdrives.network.packet;
 
 import com.sts15.enderdrives.items.EnderDiskItem;
+import com.sts15.enderdrives.items.EnderFluidDiskItem;
 import com.sts15.enderdrives.screen.FrequencyScope;
-import com.sts15.enderdrives.screen.TransferMode;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -56,14 +56,22 @@ public class UpdateFrequencyPacket implements CustomPacketPayload {
     public static void handle(UpdateFrequencyPacket packet, IPayloadContext context) {
         context.enqueueWork(() -> {
             if (context.player() instanceof ServerPlayer player) {
-                ItemStack heldItem = player.getMainHandItem();
-                if (heldItem.getItem() instanceof EnderDiskItem) {
-                    EnderDiskItem.setFrequency(heldItem, packet.frequency);
-                    EnderDiskItem.setScope(heldItem, packet.scope);
-                    EnderDiskItem.setTransferMode(heldItem, packet.transferMode);
+                ItemStack held = player.getMainHandItem();
+                if (held.isEmpty()) return;
 
+                if (held.getItem() instanceof EnderDiskItem) {
+                    EnderDiskItem.setFrequency(held, packet.frequency);
+                    EnderDiskItem.setScope(held, packet.scope);
+                    EnderDiskItem.setTransferMode(held, packet.transferMode);
                     if (packet.scope == FrequencyScope.PERSONAL) {
-                        EnderDiskItem.setOwnerUUID(heldItem, player.getUUID());
+                        EnderDiskItem.setOwnerUUID(held, player.getUUID());
+                    }
+                } else if (held.getItem() instanceof EnderFluidDiskItem) {
+                    EnderFluidDiskItem.setFrequency(held, packet.frequency);
+                    EnderFluidDiskItem.setScope(held, packet.scope);
+                    EnderFluidDiskItem.setTransferMode(held, packet.transferMode);
+                    if (packet.scope == FrequencyScope.PERSONAL) {
+                        EnderFluidDiskItem.setOwnerUUID(held, player.getUUID());
                     }
                 }
             }

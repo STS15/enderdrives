@@ -25,3 +25,4 @@ runs
 /neoforge/extra-mods
 /forge
 /fabric
+/neoforge/src/generated/resources/.cache/

@@ -1,7 +1,10 @@
 package com.sts15.enderdrives.db;
 
 import net.minecraft.world.item.ItemStack;
-import java.util.*;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class ClientDiskCache {
     private static final Map<String, DiskTypeInfo> DISK_CACHE = new HashMap<>();

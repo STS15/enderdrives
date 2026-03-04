@@ -22,6 +22,18 @@ public class ItemInit {
             ITEMS.register("ender_disk_256k", () -> new EnderDiskItem(new Item.Properties(), () -> serverConfig.ENDER_DISK_256K_TYPE_LIMIT.get()));
     public static final DeferredHolder<Item, EnderDiskItem> ENDER_DISK_creative =
             ITEMS.register("ender_disk_creative", () -> new EnderDiskItem(new Item.Properties(), () -> serverConfig.ENDER_DISK_CREATIVE_TYPE_LIMIT.get()));
+    public static final DeferredHolder<Item, EnderFluidDiskItem> ENDER_FLUID_DISK_1K =
+            ITEMS.register("ender_fluid_disk_1k", () -> new EnderFluidDiskItem(new Item.Properties(), () -> serverConfig.ENDER_FLUID_DISK_1K_TYPE_LIMIT.get()));
+    public static final DeferredHolder<Item, EnderFluidDiskItem> ENDER_FLUID_DISK_4K =
+            ITEMS.register("ender_fluid_disk_4k", () -> new EnderFluidDiskItem(new Item.Properties(), () -> serverConfig.ENDER_FLUID_DISK_4K_TYPE_LIMIT.get()));
+    public static final DeferredHolder<Item, EnderFluidDiskItem> ENDER_FLUID_DISK_16K =
+            ITEMS.register("ender_fluid_disk_16k", () -> new EnderFluidDiskItem(new Item.Properties(), () -> serverConfig.ENDER_FLUID_DISK_16K_TYPE_LIMIT.get()));
+    public static final DeferredHolder<Item, EnderFluidDiskItem> ENDER_FLUID_DISK_64K =
+            ITEMS.register("ender_fluid_disk_64k", () -> new EnderFluidDiskItem(new Item.Properties(), () -> serverConfig.ENDER_FLUID_DISK_64K_TYPE_LIMIT.get()));
+    public static final DeferredHolder<Item, EnderFluidDiskItem> ENDER_FLUID_DISK_256K =
+            ITEMS.register("ender_fluid_disk_256k", () -> new EnderFluidDiskItem(new Item.Properties(), () -> serverConfig.ENDER_FLUID_DISK_256K_TYPE_LIMIT.get()));
+    public static final DeferredHolder<Item, EnderFluidDiskItem> ENDER_FLUID_DISK_creative =
+            ITEMS.register("ender_fluid_disk_creative", () -> new EnderFluidDiskItem(new Item.Properties(), () -> serverConfig.ENDER_FLUID_DISK_CREATIVE_TYPE_LIMIT.get()));
 
     public static final DeferredHolder<Item, TapeDiskItem> TAPE_DISK =
             ITEMS.register("tape_disk", () -> new TapeDiskItem(new Item.Properties(), () -> serverConfig.TAPE_DISK_TYPE_LIMIT.get()));
@@ -31,6 +43,9 @@ public class ItemInit {
     public static final DeferredHolder<Item, Item> ENDER_STORAGE_COMPONENT_16K = ITEMS.register("ender_storage_component_16k", () -> new Item(new Item.Properties()) {});
     public static final DeferredHolder<Item, Item> ENDER_STORAGE_COMPONENT_64K = ITEMS.register("ender_storage_component_64k", () -> new Item(new Item.Properties()) {});
     public static final DeferredHolder<Item, Item> ENDER_STORAGE_COMPONENT_256K = ITEMS.register("ender_storage_component_256k", () -> new Item(new Item.Properties()) {});
+
+    public static final DeferredHolder<Item, Item> ENDER_ITEM_HOUSING = ITEMS.register("ender_item_housing", () -> new Item(new Item.Properties()) {});
+    public static final DeferredHolder<Item, Item> ENDER_FLUID_HOUSING = ITEMS.register("ender_fluid_housing", () -> new Item(new Item.Properties()) {});
 
     public static void register(IEventBus eventBus) {
         ITEMS.register(eventBus);

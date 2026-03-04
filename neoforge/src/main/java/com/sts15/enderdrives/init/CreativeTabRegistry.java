@@ -22,12 +22,20 @@ public class CreativeTabRegistry {
                 output.accept(ItemInit.ENDER_STORAGE_COMPONENT_16K.get());
                 output.accept(ItemInit.ENDER_STORAGE_COMPONENT_64K.get());
                 output.accept(ItemInit.ENDER_STORAGE_COMPONENT_256K.get());
+                output.accept(ItemInit.ENDER_ITEM_HOUSING.get());
+                output.accept(ItemInit.ENDER_FLUID_HOUSING.get());
                 output.accept(ItemInit.ENDER_DISK_1K.get());
                 output.accept(ItemInit.ENDER_DISK_4K.get());
                 output.accept(ItemInit.ENDER_DISK_16K.get());
                 output.accept(ItemInit.ENDER_DISK_64K.get());
                 output.accept(ItemInit.ENDER_DISK_256K.get());
                 output.accept(ItemInit.ENDER_DISK_creative.get());
+                output.accept(ItemInit.ENDER_FLUID_DISK_1K.get());
+                output.accept(ItemInit.ENDER_FLUID_DISK_4K.get());
+                output.accept(ItemInit.ENDER_FLUID_DISK_16K.get());
+                output.accept(ItemInit.ENDER_FLUID_DISK_64K.get());
+                output.accept(ItemInit.ENDER_FLUID_DISK_256K.get());
+                output.accept(ItemInit.ENDER_FLUID_DISK_creative.get());
                 output.accept(ItemInit.TAPE_DISK.get());
             })
             .build());

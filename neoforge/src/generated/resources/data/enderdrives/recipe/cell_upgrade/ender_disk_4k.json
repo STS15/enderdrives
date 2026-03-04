@@ -1,0 +1,14 @@
+{
+  "type": "ae2:storage_cell_disassembly",
+  "cell": "enderdrives:ender_disk_4k",
+  "cell_disassembly_items": [
+    {
+      "count": 1,
+      "id": "enderdrives:ender_item_housing"
+    },
+    {
+      "count": 1,
+      "id": "enderdrives:ender_storage_component_4k"
+    }
+  ]
+}

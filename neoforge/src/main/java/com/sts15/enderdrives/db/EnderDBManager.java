@@ -1,25 +1,26 @@
 package com.sts15.enderdrives.db;
 
 import appeng.api.stacks.AEItemKey;
+import com.sts15.enderdrives.Constants;
 import com.sts15.enderdrives.config.serverConfig;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.storage.LevelResource;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+
 import java.io.*;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
+
 import static com.sts15.enderdrives.inventory.EnderDiskInventory.deserializeItemStackFromBytes;
 
-public class EnderDBManager {
+public class EnderDBManager extends AbstractEnderDBManager {
 
-    private static final Logger LOGGER = LogManager.getLogger("EnderDrives");
     public static final ConcurrentSkipListMap<AEKey, StoredEntry> dbMap = new ConcurrentSkipListMap<>();
     private static final BlockingQueue<byte[]> walQueue = new LinkedBlockingQueue<>();
     private static final ConcurrentHashMap<String, CachedCount> itemCountCache = new ConcurrentHashMap<>();
@@ -37,9 +38,13 @@ public class EnderDBManager {
     private static final long MAX_WAL_COMMIT_MS       = serverConfig.END_DB_MAX_COMMIT_INTERVAL_MS.get();
     private static final long MIN_DB_COMMIT_MS        = serverConfig.END_DB_MIN_DB_COMMIT_INTERVAL_MS.get();
     private static final long MAX_DB_COMMIT_MS        = serverConfig.END_DB_MAX_DB_COMMIT_INTERVAL_MS.get();
-    private static final boolean DEBUG_LOG            = serverConfig.END_DB_DEBUG_LOG.get();
+
     private static long lastWalCommitTime = System.currentTimeMillis();
     private static long lastDbCommitTime  = System.currentTimeMillis();
+
+    public EnderDBManager() {
+        super("EnderDBManager", walWriter);
+    }
 
 // ==== Public API ====
 
@@ -144,14 +149,75 @@ public class EnderDBManager {
     /**
      * Retrieves the stored count of an item in the database.
      *
-     * @param scopePrefix The scope name.
-     * @param freq        The frequency ID.
-     * @param keyBytes The serialized item key.
-     * @return The current stored count for the item.
+     * This method first does the direct byte[] key lookup (fast path). If that returns 0,
+     * it will attempt a semantic lookup by deserializing the provided bytes to an AEItemKey
+     * and summing any entries in the same scope/frequency whose stored AEItemKey equals it.
+     *
+     * If any legacy entries are found that match by AEItemKey but use different byte[] keys,
+     * they will be merged into the canonical key (the provided keyBytes) to avoid future mismatches.
      */
     public static long getItemCount(String scopePrefix, int freq, byte[] keyBytes) {
         AEKey key = new AEKey(scopePrefix, freq, keyBytes);
-        return dbMap.getOrDefault(key, new StoredEntry(0L, null)).count();
+        // Fast direct lookup first
+        StoredEntry direct = dbMap.get(key);
+        long directCount = direct == null ? 0L : direct.count();
+        if (directCount > 0) return directCount;
+
+        // Fallback: try to deserialize provided bytes into AEItemKey and match by AEItemKey equality.
+        AEItemKey requestedAek = null;
+        try {
+            ItemStack s = deserializeItemStackFromBytes(keyBytes);
+            if (!s.isEmpty()) requestedAek = AEItemKey.of(s);
+        } catch (Exception ignored) {}
+
+        if (requestedAek == null) return 0L;
+
+        // Scan the frequency submap to find matching AEItemKeys (this finds legacy/alternate-key entries)
+        AEKey from = new AEKey(scopePrefix, freq, new byte[0]);
+        AEKey to   = new AEKey(scopePrefix, freq + 1, new byte[0]);
+
+        long sum = 0L;
+        List<AEKey> keysToMerge = new ArrayList<>();
+
+        // Synchronize on commitLock to safely inspect and mutate dbMap for merging
+        synchronized (commitLock) {
+            NavigableMap<AEKey, StoredEntry> sub = dbMap.subMap(from, true, to, false);
+            for (Map.Entry<AEKey, StoredEntry> e : sub.entrySet()) {
+                StoredEntry stored = e.getValue();
+                AEItemKey storedAek = stored.aeKey();
+
+                // If stored aeKey is null, attempt to lazily recover it from the stored bytes
+                if (storedAek == null) {
+                    try {
+                        ItemStack s2 = deserializeItemStackFromBytes(e.getKey().itemBytes());
+                        if (!s2.isEmpty()) storedAek = AEItemKey.of(s2);
+                    } catch (Exception ignored) {}
+                }
+
+                if (storedAek != null && storedAek.equals(requestedAek)) {
+                    sum += stored.count();
+                    keysToMerge.add(e.getKey());
+                }
+            }
+
+            if (sum > 0) {
+                // Merge found legacy entries into the canonical key (the provided keyBytes)
+                long existing = dbMap.getOrDefault(key, new StoredEntry(0L, null)).count();
+                long newCount = existing + sum;
+                dbMap.put(key, new StoredEntry(newCount, requestedAek));
+
+                // Remove legacy keys (except when one of them already equals the canonical key)
+                for (AEKey k : keysToMerge) {
+                    if (!Arrays.equals(k.itemBytes(), keyBytes)) {
+                        dbMap.remove(k);
+                    }
+                }
+
+                dirty = true;
+            }
+        }
+
+        return sum;
     }
 
 
@@ -209,6 +275,8 @@ public class EnderDBManager {
 
     /**
      * Queries all items for a scope/freq, merging committed + pending.
+     * This now attempts to repair entries that have null aeKey by deserializing their byte[] and
+     * updating the StoredEntry with an AEItemKey where possible so they are visible to callers.
      */
     public static List<AEKeyCacheEntry> queryItemsByFrequency(String scopePrefix, int freq) {
         AEKey lo = new AEKey(scopePrefix, freq,   new byte[0]);
@@ -216,15 +284,49 @@ public class EnderDBManager {
         NavigableMap<AEKey, StoredEntry> committed = dbMap.subMap(lo, true, hi, false);
 
         List<AEKeyCacheEntry> result = new ArrayList<>();
+        // We may need to update some entries with recovered AEItemKey instances.
+        List<AEKey> keysToUpdate = new ArrayList<>();
+        Map<AEKey, AEItemKey> recovered = new HashMap<>();
+
         for (var e : committed.entrySet()) {
             long cnt = e.getValue().count();
             if (cnt <= 0) continue;
             AEKey k = e.getKey();
             AEItemKey aek = e.getValue().aeKey();
+
+            if (aek == null) {
+                // Try to recover AEItemKey lazily
+                try {
+                    ItemStack s = deserializeItemStackFromBytes(k.itemBytes());
+                    if (!s.isEmpty()) {
+                        AEItemKey derived = AEItemKey.of(s);
+                        aek = derived;
+                        keysToUpdate.add(k);
+                        recovered.put(k, derived);
+                    }
+                } catch (Exception ignored) {}
+            }
+
             if (aek != null) {
                 result.add(new AEKeyCacheEntry(k, aek, cnt));
             }
         }
+
+        // Apply any recovered AEItemKey instances back into the map under commitLock so future queries are fast.
+        if (!keysToUpdate.isEmpty()) {
+            synchronized (commitLock) {
+                for (AEKey k : keysToUpdate) {
+                    StoredEntry old = dbMap.get(k);
+                    if (old == null) continue; // might have been removed concurrently
+                    AEItemKey newAek = recovered.get(k);
+                    if (newAek != null) {
+                        dbMap.put(k, new StoredEntry(old.count(), newAek));
+                        dirty = true;
+                    }
+                }
+            }
+        }
+
         return result;
     }
 
@@ -398,11 +500,11 @@ public class EnderDBManager {
 
                         Thread.sleep(100);
                     } catch (Exception e) {
-                        LOGGER.error("Background commit error", e);
+                        Constants.LOG.error("Background commit error", e);
                     }
                 }
             } catch (Exception e) {
-                LOGGER.error("[EnderDB] WAL Commit thread crashed", e);
+                Constants.LOG.error("[EnderDB] WAL Commit thread crashed", e);
             }
         }, "EnderDB-CommitThread");
 
@@ -482,7 +584,7 @@ public class EnderDBManager {
             }
             walWriter.flush();
         } catch (IOException e) {
-            LOGGER.error("Error flushing WAL queue during shutdown", e);
+            Constants.LOG.error("Error flushing WAL queue during shutdown", e);
         }
     }
 
@@ -619,28 +721,6 @@ public class EnderDBManager {
 // ==== Internal DB Tools ====
 
     /**
-     * Calculates a checksum for a byte array using CRC32.
-     *
-     * @param data The byte array to checksum.
-     * @return The CRC32 value.
-     */
-    private static long checksum(byte[] data) {
-        CRC32 crc = new CRC32();
-        crc.update(data);
-        return crc.getValue();
-    }
-
-    /**
-     * Logs debug messages to console if DEBUG_LOG is enabled.
-     *
-     * @param format The message format string.
-     * @param args   Format arguments.
-     */
-    private static void log(String format, Object... args) {
-        if (DEBUG_LOG) LOGGER.info("[EnderDBManager] " + format, args);
-    }
-
-    /**
      * Migrates any legacy records with malformed or missing scope names to the "global" scope.
      */
     private static void migrateOldRecords() {
@@ -691,7 +771,7 @@ public class EnderDBManager {
             if (currentWAL != null && currentWAL.exists()) {
                 zipFile(currentWAL, zos);
             }
-            LOGGER.info("Backed up existing database to {} due to mod version change.", backupZip.getName());
+            Constants.LOG.info("Backed up existing database to {} due to mod version change.", backupZip.getName());
         } catch (IOException e) {
             e.printStackTrace();
         }

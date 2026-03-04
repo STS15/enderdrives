@@ -1,24 +1,17 @@
 package com.sts15.enderdrives.mixins.compat;
 
-import appeng.api.config.Actionable;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridNode;
-import appeng.api.networking.energy.IEnergyService;
 import appeng.api.networking.ticking.TickRateModulation;
-import appeng.api.stacks.AEKey;
-import appeng.api.stacks.KeyCounter;
-import appeng.api.storage.MEStorage;
-import appeng.api.storage.StorageHelper;
 import appeng.blockentity.storage.DriveBlockEntity;
 import com.glodblock.github.extendedae.common.tileentities.TileExIOPort;
-import com.sts15.enderdrives.inventory.TapeDiskInventory;
-import com.sts15.enderdrives.items.EnderDiskItem;
+import com.sts15.enderdrives.items.AbstractEnderDiskItem;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
@@ -48,18 +41,18 @@ public abstract class TileExIOPortMixin {
         for (DriveBlockEntity drive : grid.getMachines(DriveBlockEntity.class)) {
             for (int j = 0; j < drive.getCellCount(); j++) {
                 ItemStack driveStack = drive.getInternalInventory().getStackInSlot(j);
-                if (!(driveStack.getItem() instanceof EnderDiskItem)) continue;
+                if (!(driveStack.getItem() instanceof AbstractEnderDiskItem)) continue;
 
-                int driveFreq = EnderDiskItem.getFrequency(driveStack);
-                String driveScope = EnderDiskItem.getSafeScopePrefix(driveStack);
+                int driveFreq = AbstractEnderDiskItem.getFrequency(driveStack);
+                String driveScope = AbstractEnderDiskItem.getSafeScopePrefix(driveStack);
 
                 // Check input cells
                 for (int i = 0; i < 6; i++) {
                     ItemStack inputStack = ((TileExIOPort)(Object)this).getInternalInventory().getStackInSlot(i);
-                    if (!(inputStack.getItem() instanceof EnderDiskItem)) continue;
+                    if (!(inputStack.getItem() instanceof AbstractEnderDiskItem)) continue;
 
-                    int inputFreq = EnderDiskItem.getFrequency(inputStack);
-                    String inputScope = EnderDiskItem.getSafeScopePrefix(inputStack);
+                    int inputFreq = AbstractEnderDiskItem.getFrequency(inputStack);
+                    String inputScope = AbstractEnderDiskItem.getSafeScopePrefix(inputStack);
 
                     if (inputFreq == driveFreq && inputScope.equals(driveScope)) {
                         enderdrives$ExPlayLoopWarning(level, pos);
@@ -71,10 +64,10 @@ public abstract class TileExIOPortMixin {
                 // Check output cells
                 for (int i = 6; i < 12; i++) {
                     ItemStack outputStack = ((TileExIOPort)(Object)this).getInternalInventory().getStackInSlot(i);
-                    if (!(outputStack.getItem() instanceof EnderDiskItem)) continue;
+                    if (!(outputStack.getItem() instanceof AbstractEnderDiskItem)) continue;
 
-                    int outputFreq = EnderDiskItem.getFrequency(outputStack);
-                    String outputScope = EnderDiskItem.getSafeScopePrefix(outputStack);
+                    int outputFreq = AbstractEnderDiskItem.getFrequency(outputStack);
+                    String outputScope = AbstractEnderDiskItem.getSafeScopePrefix(outputStack);
 
                     if (outputFreq == driveFreq && outputScope.equals(driveScope)) {
                         enderdrives$ExPlayLoopWarning(level, pos);

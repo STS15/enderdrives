@@ -3,7 +3,7 @@ package com.sts15.enderdrives.screen;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.sts15.enderdrives.client.ClientConfigCache;
 import com.sts15.enderdrives.config.serverConfig;
-import com.sts15.enderdrives.items.EnderDiskItem;
+import com.sts15.enderdrives.items.AbstractEnderDiskItem;
 import com.sts15.enderdrives.network.NetworkHandler;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -20,9 +20,11 @@ import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.fml.ModList;
 import org.joml.Matrix4f;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+
 import static com.sts15.enderdrives.Constants.MOD_ID;
 import static com.sts15.enderdrives.screen.EnderDiskFrequencyScreen.useAltTheme;
 
@@ -398,8 +400,8 @@ public class EnderDiskFrequencyScreen extends Screen {
             Player player = Minecraft.getInstance().player;
             if (player != null) {
                 ItemStack held = player.getMainHandItem();
-                if (held.getItem() instanceof EnderDiskItem) {
-                    EnderDiskItem.updateTeamInfo(held, player);
+                if (held.getItem() instanceof AbstractEnderDiskItem) {
+                    AbstractEnderDiskItem.updateTeamInfo(held, player);
                 }
             }
         }

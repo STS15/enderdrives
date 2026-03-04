@@ -1,0 +1,16 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "enderdrives:ender_fluid_housing"
+    },
+    {
+      "item": "enderdrives:ender_storage_component_16k"
+    }
+  ],
+  "result": {
+    "count": 1,
+    "id": "enderdrives:ender_fluid_disk_16k"
+  }
+}

@@ -90,7 +90,7 @@ dependencies {
     implementation "curse.maven:geckolib-388172:6304958"
     implementation "curse.maven:advancedae-1084104:6225993"
 
-    compileOnly "dev.latvian.mods:kubejs-neoforge:2101.7.1-build.181"
+    compileOnly "dev.latvian.mods:kubejs-neoforge:2101.7.+"
 
     compileOnly "dev.architectury:architectury-neoforge:${architectury_api_version}"
     compileOnly "curse.maven:ftb-library-forge-404465:6698124"
@@ -176,6 +176,7 @@ processResources {
         expand "version": project.version
     }
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    exclude '.cache'
 }
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }

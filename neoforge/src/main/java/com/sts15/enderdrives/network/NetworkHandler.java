@@ -23,10 +23,11 @@ public class NetworkHandler {
         registrar.playToClient(SyncDisabledDrivesPacket.TYPE, SyncDisabledDrivesPacket.STREAM_CODEC, SyncDisabledDrivesPacket::handle);
         registrar.playToClient(UpdateDiskTypeCountPacket.TYPE, UpdateDiskTypeCountPacket.STREAM_CODEC.cast(), UpdateDiskTypeCountPacket::handle);
         registrar.playToServer(RequestDiskTypeCountPacket.TYPE, RequestDiskTypeCountPacket.STREAM_CODEC, RequestDiskTypeCountPacket::handle);
-        registrar.playToServer(UpdateFrequencyPacket.TYPE, UpdateFrequencyPacket.STREAM_CODEC, UpdateFrequencyPacket::handle);
         registrar.playToServer(RequestTapeTypeCountPacket.TYPE, RequestTapeTypeCountPacket.STREAM_CODEC, RequestTapeTypeCountPacket::handle);
         registrar.playToClient(UpdateTapeTypeCountPacket.TYPE, UpdateTapeTypeCountPacket.STREAM_CODEC.cast(), UpdateTapeTypeCountPacket::handle);
-
+        registrar.playToServer(UpdateFrequencyPacket.TYPE, UpdateFrequencyPacket.STREAM_CODEC, UpdateFrequencyPacket::handle);
+        registrar.playToServer(RequestFluidDiskTypeCountPacket.TYPE, RequestFluidDiskTypeCountPacket.STREAM_CODEC, RequestFluidDiskTypeCountPacket::handle);
+        registrar.playToClient(UpdateFluidDiskTypeCountPacket.TYPE, UpdateFluidDiskTypeCountPacket.STREAM_CODEC.cast(), UpdateFluidDiskTypeCountPacket::handle);
     }
 
     public static void sendFrequencyUpdateToServer(int frequency, FrequencyScope scope, int transferMode) {
@@ -37,7 +38,15 @@ public class NetworkHandler {
         PacketDistributor.sendToServer(new RequestDiskTypeCountPacket(scopePrefix, frequency, typeLimit));
     }
 
+    public static void requestFluidDiskTypeCount(String scopePrefix, int frequency, int typeLimit) {
+        PacketDistributor.sendToServer(new RequestFluidDiskTypeCountPacket(scopePrefix, frequency, typeLimit));
+    }
+
     public static void sendToClient(ServerPlayer player, UpdateDiskTypeCountPacket packet) {
+        PacketDistributor.sendToPlayer(player, packet);
+    }
+
+    public static void sendToClient(ServerPlayer player, UpdateFluidDiskTypeCountPacket packet) {
         PacketDistributor.sendToPlayer(player, packet);
     }
 
@@ -48,5 +57,4 @@ public class NetworkHandler {
     public static void sendToServer(UUID id) {
         PacketDistributor.sendToServer(new RequestTapeTypeCountPacket(id.getMostSignificantBits(), id.getLeastSignificantBits()));
     }
-
 }

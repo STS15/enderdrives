@@ -1,10 +1,9 @@
 package com.sts15.enderdrives.datagen.assets;
 
-import net.neoforged.neoforge.client.model.generators.BlockModelProvider;
-import net.neoforged.neoforge.common.data.ExistingFileHelper;
-
 import net.minecraft.core.Direction;
 import net.minecraft.data.PackOutput;
+import net.neoforged.neoforge.client.model.generators.BlockModelProvider;
+import net.neoforged.neoforge.common.data.ExistingFileHelper;
 
 import static com.sts15.enderdrives.Constants.MOD_ID;
 
@@ -17,6 +16,7 @@ public class EDBlockModelProvider extends BlockModelProvider {
     @Override
     protected void registerModels() {
         driveCell("ender_cell");
+        driveCell("ender_fluid_cell");
         driveCell("tape_cell");
     }
 

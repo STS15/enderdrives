@@ -16,10 +16,11 @@ import appeng.api.storage.cells.StorageCell;
 import appeng.blockentity.storage.DriveBlockEntity;
 import appeng.blockentity.storage.IOPortBlockEntity;
 import appeng.util.inv.AppEngInternalInventory;
-import com.sts15.enderdrives.db.EnderDBManager;
-import com.sts15.enderdrives.inventory.EnderDiskInventory;
+import com.sts15.enderdrives.db.AbstractEnderDBManager;
+import com.sts15.enderdrives.inventory.AbstractEnderDiskInventory;
 import com.sts15.enderdrives.inventory.TapeDiskInventory;
 import com.sts15.enderdrives.items.EnderDiskItem;
+import com.sts15.enderdrives.items.EnderFluidDiskItem;
 import com.sts15.enderdrives.items.TapeDiskItem;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -28,6 +29,8 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -35,8 +38,7 @@ import org.spongepowered.asm.mixin.gen.Invoker;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+
 import java.util.Map;
 
 @Mixin(IOPortBlockEntity.class)
@@ -63,7 +65,7 @@ public abstract class IOPortBlockEntityMixin {
         }
 
         // 2) Ender disk sync
-        if (sourceInv instanceof EnderDiskInventory ed) {
+        if (sourceInv instanceof AbstractEnderDiskInventory ed) {
             long rem = enderdrives$transferOneTypeSynced(grid, ed, toMove);
             if (rem < toMove) {
                 cir.setReturnValue(rem);
@@ -132,12 +134,12 @@ public abstract class IOPortBlockEntityMixin {
         return budget;
     }
 
-    @Unique private long enderdrives$transferOneTypeSynced(IGrid grid, EnderDiskInventory src, long budget) {
+    @Unique private long enderdrives$transferOneTypeSynced(IGrid grid, AbstractEnderDiskInventory src, long budget) {
         KeyCounter kc = new KeyCounter(); src.getAvailableStacks(kc);
         if (kc.isEmpty()) return budget;
         MEStorage net = grid.getStorageService().getInventory();
         IEnergyService en = grid.getEnergyService();
-        EnderDBManager.flushWALQueue();
+        AbstractEnderDBManager.flushWALQueue();
         for (Map.Entry<AEKey, Long> e : kc) {
             AEKey key = e.getKey(); long have = e.getValue();
             long simExt = src.extract(key, have, Actionable.SIMULATE, mySrc);
@@ -179,42 +181,81 @@ public abstract class IOPortBlockEntityMixin {
     private void enderdrives$preventSameFrequencyTransfer(IGridNode node, int ticksSinceLastCall, CallbackInfoReturnable<TickRateModulation> cir) {
         IGrid grid = node.getGrid();
         if (grid == null) return;
+
         Level level = ((IOPortBlockEntity)(Object)this).getLevel();
         BlockPos pos = ((IOPortBlockEntity)(Object)this).getBlockPos();
 
         for (DriveBlockEntity drive : grid.getMachines(DriveBlockEntity.class)) {
             for (int j = 0; j < drive.getCellCount(); j++) {
                 ItemStack driveStack = drive.getInternalInventory().getStackInSlot(j);
-                if (!(driveStack.getItem() instanceof EnderDiskItem)) continue;
-                int driveFreq = EnderDiskItem.getFrequency(driveStack);
-                String driveScope = EnderDiskItem.getSafeScopePrefix(driveStack);
 
+                final boolean driveIsItem  = driveStack.getItem() instanceof EnderDiskItem;
+                final boolean driveIsFluid = driveStack.getItem() instanceof EnderFluidDiskItem;
+                if (!driveIsItem && !driveIsFluid) continue;
+
+                final int driveFreq;
+                final String driveScope;
+                if (driveIsItem) {
+                    driveFreq  = EnderDiskItem.getFrequency(driveStack);
+                    driveScope = EnderDiskItem.getSafeScopePrefix(driveStack);
+                } else { // fluid
+                    driveFreq  = EnderFluidDiskItem.getFrequency(driveStack);
+                    driveScope = EnderFluidDiskItem.getSafeScopePrefix(driveStack);
+                }
+
+                // ---- inputs (same type only)
                 for (int i = 0; i < inputCells.size(); i++) {
                     ItemStack inputStack = inputCells.getStackInSlot(i);
-                    if (!(inputStack.getItem() instanceof EnderDiskItem)) continue;
-                    int inputFreq = EnderDiskItem.getFrequency(inputStack);
-                    String inputScope = EnderDiskItem.getSafeScopePrefix(inputStack);
-                    if (inputFreq == driveFreq && inputScope.equals(driveScope)) {
-                        enderdrives$playLoopWarning(level, pos);
-                        cir.setReturnValue(TickRateModulation.IDLE);
-                        return;
+
+                    if (driveIsItem) {
+                        if (!(inputStack.getItem() instanceof EnderDiskItem)) continue;
+                        int inputFreq = EnderDiskItem.getFrequency(inputStack);
+                        String inputScope = EnderDiskItem.getSafeScopePrefix(inputStack);
+                        if (inputFreq == driveFreq && inputScope.equals(driveScope)) {
+                            enderdrives$playLoopWarning(level, pos);
+                            cir.setReturnValue(TickRateModulation.IDLE);
+                            return;
+                        }
+                    } else { // driveIsFluid
+                        if (!(inputStack.getItem() instanceof EnderFluidDiskItem)) continue;
+                        int inputFreq = EnderFluidDiskItem.getFrequency(inputStack);
+                        String inputScope = EnderFluidDiskItem.getSafeScopePrefix(inputStack);
+                        if (inputFreq == driveFreq && inputScope.equals(driveScope)) {
+                            enderdrives$playLoopWarning(level, pos);
+                            cir.setReturnValue(TickRateModulation.IDLE);
+                            return;
+                        }
                     }
                 }
 
+                // ---- outputs (same type only)
                 for (int i = 0; i < outputCells.size(); i++) {
                     ItemStack outputStack = outputCells.getStackInSlot(i);
-                    if (!(outputStack.getItem() instanceof EnderDiskItem)) continue;
-                    int outputFreq = EnderDiskItem.getFrequency(outputStack);
-                    String outputScope = EnderDiskItem.getSafeScopePrefix(outputStack);
-                    if (outputFreq == driveFreq && outputScope.equals(driveScope)) {
-                        enderdrives$playLoopWarning(level, pos);
-                        cir.setReturnValue(TickRateModulation.IDLE);
-                        return;
+
+                    if (driveIsItem) {
+                        if (!(outputStack.getItem() instanceof EnderDiskItem)) continue;
+                        int outputFreq = EnderDiskItem.getFrequency(outputStack);
+                        String outputScope = EnderDiskItem.getSafeScopePrefix(outputStack);
+                        if (outputFreq == driveFreq && outputScope.equals(driveScope)) {
+                            enderdrives$playLoopWarning(level, pos);
+                            cir.setReturnValue(TickRateModulation.IDLE);
+                            return;
+                        }
+                    } else { // driveIsFluid
+                        if (!(outputStack.getItem() instanceof EnderFluidDiskItem)) continue;
+                        int outputFreq = EnderFluidDiskItem.getFrequency(outputStack);
+                        String outputScope = EnderFluidDiskItem.getSafeScopePrefix(outputStack);
+                        if (outputFreq == driveFreq && outputScope.equals(driveScope)) {
+                            enderdrives$playLoopWarning(level, pos);
+                            cir.setReturnValue(TickRateModulation.IDLE);
+                            return;
+                        }
                     }
                 }
             }
         }
     }
+
 
     @Unique
     private void enderdrives$playLoopWarning(Level level, BlockPos pos) {

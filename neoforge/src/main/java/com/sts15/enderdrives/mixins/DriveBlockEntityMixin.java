@@ -5,7 +5,6 @@ import com.sts15.enderdrives.integration.DriveBlockEntityAccessor;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
-import org.spongepowered.asm.mixin.gen.Invoker;
 
 @Mixin(DriveBlockEntity.class)
 public class DriveBlockEntityMixin implements DriveBlockEntityAccessor {
