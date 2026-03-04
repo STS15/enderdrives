@@ -11,7 +11,6 @@ import appeng.util.ConfigInventory;
 import com.sts15.enderdrives.client.ClientTapeCache;
 import com.sts15.enderdrives.network.NetworkHandler;
 import com.sts15.enderdrives.config.serverConfig;
-import com.sts15.enderdrives.network.packet.RequestTapeTypeCountPacket;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
@@ -70,6 +69,7 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
         UUID id = getTapeId(stack);
         int limitColor = 0x866dfc;
         int goodColor = 0x55FF55;
+        int midColor = 0x00AAFF;
         int warnColor = 0xFFAA00;
         int fullColor = 0xFF5555;
         int labelColor = 0xAAAAAA;
@@ -90,7 +90,16 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
             long byteLimit = getByteLimit(id);
             int typePercent = (typeLimit == 0) ? 0 : (typeCount * 100 / typeLimit);
             int bytePercent = (byteLimit == 0) ? 0 : (int) (byteCount * 100 / byteLimit);
-            int typeColor = (typePercent >= 99) ? fullColor : (typePercent >= 75 ? warnColor : goodColor);
+            int typeColor;
+            if (typeCount <= 0) {
+                typeColor = goodColor;
+            } else if (typeLimit > 0 && typeCount >= typeLimit) {
+                typeColor = fullColor;
+            } else if (typeLimit > 0 && typePercent >= 75) {
+                typeColor = warnColor;
+            } else {
+                typeColor = midColor;
+            }
             int byteColor = (bytePercent >= 99) ? fullColor : (bytePercent >= 75 ? warnColor : goodColor);
 
             lines.add(Component.translatable("tooltip.enderdrives.tape.bytes",
@@ -109,7 +118,7 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
             int partitionCount = config.keySet().size();
             if (partitionCount > 0) {
                 String plural = (partitionCount == 1) ? "" : "s";
-                lines.add(Component.translatable("tooltip.enderdrives.partitioned", partitionCount, plural));
+                lines.add(Component.translatable("tooltip.enderdrives.partitioned_item", partitionCount, plural));
             }
 
         } else {
@@ -133,7 +142,7 @@ public class TapeDiskItem extends Item implements ICellWorkbenchItem, IMenuItem 
             int partitionCount = config.keySet().size();
             if (partitionCount > 0) {
                 String plural = (partitionCount == 1) ? "" : "s";
-                lines.add(Component.translatable("tooltip.enderdrives.partitioned", partitionCount, plural));
+                lines.add(Component.translatable("tooltip.enderdrives.partitioned_item", partitionCount, plural));
             }
         }
 

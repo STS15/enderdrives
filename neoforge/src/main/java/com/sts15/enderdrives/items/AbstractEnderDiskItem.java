@@ -217,13 +217,16 @@ public abstract class AbstractEnderDiskItem extends Item implements ICellWorkben
         int percentFull = (typeLimit == 0) ? 0 : (typeCount * 100 / typeLimit);
 
         int limitColor = 0x866dfc;
+        int midColor = 0x0000FF;
         int usageColor;
-        if (typeCount >= typeLimit) {
+        if (typeCount <= 0) {
+            usageColor = 0x55FF55;
+        } else if (typeLimit > 0 && typeCount >= typeLimit) {
             usageColor = 0xFF5555;
-        } else if (percentFull >= 75) {
+        } else if (typeLimit > 0 && percentFull >= 75) {
             usageColor = 0xFFAA00;
         } else {
-            usageColor = 0x55FF55;
+            usageColor = midColor;
         }
         lines.add(Component.translatable("tooltip.enderdrives.types",
                 Component.literal(String.valueOf(typeCount)).withStyle(style -> style.withColor(usageColor)),

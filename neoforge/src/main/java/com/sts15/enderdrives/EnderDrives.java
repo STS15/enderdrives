@@ -6,8 +6,12 @@ import appeng.api.storage.cells.CellState;
 import com.sts15.enderdrives.client.ClientTapeCache;
 import com.sts15.enderdrives.commands.ModCommands;
 import com.sts15.enderdrives.config.serverConfig;
+import com.sts15.enderdrives.db.ClientDiskCache;
+import com.sts15.enderdrives.db.ClientFluidDiskCache;
+import com.sts15.enderdrives.db.DiskTypeInfo;
 import com.sts15.enderdrives.db.EnderDBManager;
 import com.sts15.enderdrives.db.EnderFluidDBManager;
+import com.sts15.enderdrives.db.FluidDiskTypeInfo;
 import com.sts15.enderdrives.db.TapeDBManager;
 import com.sts15.enderdrives.init.CreativeTabRegistry;
 import com.sts15.enderdrives.inventory.EnderDiskInventory;
@@ -37,6 +41,8 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import static com.sts15.enderdrives.Constants.MOD_ID;
@@ -110,6 +116,25 @@ public class EnderDrives {
 
     @EventBusSubscriber(modid = MOD_ID, bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
     public static class ClientModEvents {
+        private static final long STATUS_REQUEST_COOLDOWN_MS = 1000L;
+        private static final Map<String, Long> STATUS_REQUESTS = new HashMap<>();
+
+        private static boolean shouldRequestStatus(String key) {
+            long now = System.currentTimeMillis();
+            Long last = STATUS_REQUESTS.get(key);
+            if (last == null || now - last >= STATUS_REQUEST_COOLDOWN_MS) {
+                STATUS_REQUESTS.put(key, now);
+                return true;
+            }
+            return false;
+        }
+
+        private static float statusFromTypeCount(int typeCount, int typeLimit) {
+            if (typeCount <= 0) return 0.0f;
+            if (typeLimit > 0 && typeCount >= typeLimit) return 3.0f;
+            if (typeLimit > 0 && (typeCount * 100 / typeLimit) >= 75) return 2.0f;
+            return 1.0f;
+        }
 
         @SubscribeEvent
         public static void onClientSetup(FMLClientSetupEvent event) {
@@ -144,19 +169,39 @@ public class EnderDrives {
                         ItemInit.TAPE_DISK.get()
                 }) {
                     ItemProperties.register(disk, EnderDrives.id("status"), (stack, level, entity, seed) -> {
-                        CellState state;
-                        if (stack.getItem() instanceof EnderDiskItem  || stack.getItem() instanceof TapeDiskItem) {
-                            state = EnderDiskInventory.getCellStateForStack(stack);
-                        } else if (stack.getItem() instanceof EnderFluidDiskItem) {
-                            state = EnderFluidDiskInventory.getCellStateForStack(stack);
-                        } else {
-                            state = CellState.ABSENT;
+                        if (stack.getItem() instanceof EnderDiskItem enderDiskItem) {
+                            String scopePrefix = EnderDiskItem.getSafeScopePrefix(stack);
+                            int freq = EnderDiskItem.getFrequency(stack);
+                            String cacheKey = scopePrefix + "|" + freq;
+                            if (shouldRequestStatus("item:" + cacheKey)) {
+                                NetworkHandler.requestDiskTypeCount(scopePrefix, freq, enderDiskItem.getTypeLimit());
+                            }
+                            DiskTypeInfo info = ClientDiskCache.get(cacheKey);
+                            int typeLimit = info.typeLimit() > 0 ? info.typeLimit() : enderDiskItem.getTypeLimit();
+                            return statusFromTypeCount(info.typeCount(), typeLimit);
                         }
-                        return switch (state) {
-                            case ABSENT, EMPTY -> 0.0f;
-                            case NOT_EMPTY -> 1.0f;
-                            case TYPES_FULL, FULL -> 2.0f;
-                        };
+                        if (stack.getItem() instanceof EnderFluidDiskItem fluidDiskItem) {
+                            String scopePrefix = EnderFluidDiskItem.getSafeScopePrefix(stack);
+                            int freq = EnderFluidDiskItem.getFrequency(stack);
+                            String cacheKey = scopePrefix + "|" + freq;
+                            if (shouldRequestStatus("fluid:" + cacheKey)) {
+                                NetworkHandler.requestFluidDiskTypeCount(scopePrefix, freq, fluidDiskItem.getTypeLimit());
+                            }
+                            FluidDiskTypeInfo info = ClientFluidDiskCache.get(cacheKey);
+                            int typeLimit = info.typeLimit() > 0 ? info.typeLimit() : fluidDiskItem.getTypeLimit();
+                            return statusFromTypeCount(info.typeCount(), typeLimit);
+                        }
+                        if (stack.getItem() instanceof TapeDiskItem tapeDiskItem) {
+                            UUID id = TapeDiskItem.getTapeId(stack);
+                            if (id == null) return 0.0f;
+                            if (shouldRequestStatus("tape:" + id)) {
+                                NetworkHandler.sendToServer(id);
+                            }
+                            int typeCount = ClientTapeCache.getTypeCount(id);
+                            int typeLimit = tapeDiskItem.getTypeLimit(stack);
+                            return statusFromTypeCount(typeCount, typeLimit);
+                        }
+                        return 0.0f;
                     });
 
                 }
