@@ -1,0 +1,25 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "advanced_ae"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "a": "ae2:quartz_vibrant_glass",
+    "b": "advanced_ae:quantum_processor",
+    "c": "ae2:sky_dust",
+    "d": "advanced_ae:quantum_alloy_plate",
+    "e": "ae2:sky_stone_tank"
+  },
+  "pattern": [
+    "aba",
+    "c c",
+    "ded"
+  ],
+  "result": {
+    "id": "enderdrives:ender_fluid_housing"
+  }
+}

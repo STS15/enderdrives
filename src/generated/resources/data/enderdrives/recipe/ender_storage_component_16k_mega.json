@@ -1,0 +1,31 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "megacells"
+    },
+    {
+      "type": "neoforge:not",
+      "value": {
+        "type": "neoforge:mod_loaded",
+        "modid": "advanced_ae"
+      }
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "a": "ae2:singularity",
+    "b": "megacells:accumulation_processor",
+    "c": "enderdrives:ender_storage_component_4k",
+    "d": "ae2:quartz_vibrant_glass"
+  },
+  "pattern": [
+    "aba",
+    "cdc",
+    "aca"
+  ],
+  "result": {
+    "id": "enderdrives:ender_storage_component_16k"
+  }
+}

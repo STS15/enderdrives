@@ -1,0 +1,33 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "megacells"
+    },
+    {
+      "type": "neoforge:not",
+      "value": {
+        "type": "neoforge:mod_loaded",
+        "modid": "advanced_ae"
+      }
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "a": "ae2:quartz_vibrant_glass",
+    "b": "megacells:accumulation_processor",
+    "c": "ae2:sky_dust",
+    "d": "enderdrives:ender_storage_component_64k",
+    "e": "megacells:sky_steel_ingot",
+    "f": "ae2:sky_stone_tank"
+  },
+  "pattern": [
+    "aba",
+    "cdc",
+    "efe"
+  ],
+  "result": {
+    "id": "enderdrives:ender_fluid_disk_64k"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    "enderdrives:ender_item_housing",
+    "enderdrives:ender_storage_component_1k"
+  ],
+  "result": {
+    "id": "enderdrives:ender_disk_1k"
+  }
+}

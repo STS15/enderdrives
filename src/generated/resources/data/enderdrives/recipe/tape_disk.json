@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "a": "ae2:quartz_vibrant_glass",
+    "b": "ae2:sky_dust",
+    "c": "ae2:cell_component_256k",
+    "d": "minecraft:netherite_ingot",
+    "e": "ae2:light_blue_paint_ball"
+  },
+  "pattern": [
+    "aba",
+    "bcb",
+    "ded"
+  ],
+  "result": {
+    "id": "enderdrives:tape_disk"
+  }
+}

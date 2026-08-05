@@ -1,0 +1,26 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:mod_loaded",
+      "modid": "advanced_ae"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "a": "ae2:quartz_vibrant_glass",
+    "b": "advanced_ae:quantum_processor",
+    "c": "ae2:sky_dust",
+    "d": "enderdrives:ender_storage_component_256k",
+    "e": "advanced_ae:quantum_alloy_plate",
+    "f": "minecraft:ender_chest"
+  },
+  "pattern": [
+    "aba",
+    "cdc",
+    "efe"
+  ],
+  "result": {
+    "id": "enderdrives:ender_disk_256k"
+  }
+}
