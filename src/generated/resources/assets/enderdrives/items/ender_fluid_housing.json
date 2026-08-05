@@ -1,0 +1,6 @@
+{
+  "model": {
+    "type": "minecraft:model",
+    "model": "enderdrives:item/ender_fluid_housing"
+  }
+}

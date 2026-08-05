@@ -1,0 +1,12 @@
+{
+  "type": "ae2:storage_cell_disassembly",
+  "cell": "enderdrives:ender_disk_64k",
+  "cell_disassembly_items": [
+    {
+      "id": "enderdrives:ender_item_housing"
+    },
+    {
+      "id": "enderdrives:ender_storage_component_64k"
+    }
+  ]
+}

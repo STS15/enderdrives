@@ -1,0 +1,235 @@
+package com.sts15.enderdrives.inventory;
+
+import appeng.api.config.Actionable;
+import appeng.api.networking.IGrid;
+import appeng.api.networking.security.IActionSource;
+import appeng.api.stacks.AEItemKey;
+import appeng.api.stacks.AEKey;
+import appeng.api.stacks.AEKeyType;
+import appeng.api.stacks.KeyCounter;
+import appeng.api.storage.cells.CellState;
+import appeng.api.storage.cells.ICellHandler;
+import appeng.api.storage.cells.ISaveProvider;
+import appeng.api.storage.cells.StorageCell;
+import appeng.blockentity.storage.DriveBlockEntity;
+import appeng.items.contents.CellConfig;
+import appeng.util.ConfigInventory;
+import com.sts15.enderdrives.db.AEKeyCacheEntry;
+import com.sts15.enderdrives.db.EnderDBManager;
+import com.sts15.enderdrives.integration.DriveBlockEntityAccessor;
+import com.sts15.enderdrives.items.EnderDiskItem;
+import com.sts15.enderdrives.util.StackCodecHelper;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtIo;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.server.ServerLifecycleHooks;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.jetbrains.annotations.Nullable;
+
+import java.io.*;
+import java.util.List;
+import java.util.Set;
+
+public class EnderDiskInventory implements StorageCell {
+
+    private static final Logger LOGGER = LogManager.getLogger("EnderDrives");
+    private final ItemStack stack;
+    private final int frequency;
+    public static final ICellHandler HANDLER = new Handler();
+    private final int typeLimit;
+    private final boolean disabled;
+    private final String scopePrefix;
+    private static final boolean DEBUG_LOG = false;
+
+    public EnderDiskInventory(ItemStack stack, @Nullable ISaveProvider host) {
+        if (!(stack.getItem() instanceof EnderDiskItem item)) {
+            throw new IllegalArgumentException("Item is not an EnderDisk!");
+        }
+        this.stack = stack;
+        this.frequency = EnderDiskItem.getFrequency(stack);
+        this.typeLimit = item.getTypeLimit();
+        this.scopePrefix = EnderDiskItem.getSafeScopePrefix(stack);
+        this.disabled = item.isDisabled(stack) || !EnderDiskItem.isScopeBound(stack);
+    }
+
+    @Override
+    public CellState getStatus() {
+        if (disabled || !EnderDBManager.isReady()) return CellState.FULL;
+        int typesUsed = EnderDBManager.getTypeCount(scopePrefix,frequency);
+        return calculateCellState(typesUsed, typeLimit);
+    }
+
+    public static CellState calculateCellState(int typesUsed, int typeLimit) {
+        if (typesUsed == 0) return CellState.EMPTY;
+        if (typesUsed >= typeLimit) return CellState.TYPES_FULL;
+        return CellState.NOT_EMPTY;
+    }
+
+    @Override
+    public double getIdleDrain() {
+        if (disabled || !EnderDBManager.isReady()) return 0.0;
+        long totalItems = Math.max(1, EnderDBManager.getTotalItemCount(scopePrefix, frequency));
+        double base = 100;
+        double exponent = 0.8;
+        double scale = 0.015;
+        return base + (scale * Math.pow(totalItems, exponent));
+    }
+
+    public static CellState getCellStateForStack(ItemStack stack) {
+        if (!(stack.getItem() instanceof EnderDiskItem enderDiskItem)) return CellState.ABSENT;
+        if (enderDiskItem.isDisabled(stack)
+                || !EnderDiskItem.isScopeBound(stack)
+                || !EnderDBManager.isReady()) return CellState.FULL;
+        int freq = EnderDiskItem.getFrequency(stack);
+        int typesUsed = EnderDBManager.getTypeCount(EnderDiskItem.getSafeScopePrefix(stack), freq);
+        int typeLimit = enderDiskItem.getTypeLimit();
+        return calculateCellState(typesUsed, typeLimit);
+    }
+
+    @Override
+    public long insert(AEKey what, long amount, Actionable mode, IActionSource source) {
+        if (disabled) return 0;
+        int transferMode = EnderDiskItem.getTransferMode(stack);
+        if (transferMode == 2) return 0;
+        if (!(what instanceof AEItemKey itemKey)) return 0;
+        if (!passesFilter(what)) return 0;
+        if (amount <= 0 || !EnderDBManager.isReady()) {
+            log("DB not ready for inserts.");
+            return 0;
+        }
+        ItemStack toInsert = itemKey.toStack();
+        byte[] serialized = serializeItemStackToBytes(toInsert);
+        if (serialized.length == 0) return 0;
+        long existing = EnderDBManager.getItemCount(scopePrefix, frequency, serialized);
+        boolean isNewType = existing == 0;
+        if (isNewType && EnderDBManager.getTypeCountInclusive(scopePrefix, frequency) >= typeLimit) return 0;
+        long accepted = amount;
+        if (mode == Actionable.MODULATE) {
+            accepted = EnderDBManager.insertItem(scopePrefix, frequency, serialized, amount, typeLimit);
+            if (accepted > 0) pingDriveForUpdate(source);
+        }
+        log("Insert called: freq=%d scopePrefix=%s amount=%d newType=%s mode=%s", frequency, scopePrefix, amount, isNewType, mode);
+        return accepted;
+    }
+
+    @Override
+    public long extract(AEKey what, long amount, Actionable mode, IActionSource source) {
+        if (disabled || amount <= 0 || !EnderDBManager.isReady()) return 0;
+        int transferMode = EnderDiskItem.getTransferMode(stack);
+        if (transferMode == 1) return 0;
+        if (!(what instanceof AEItemKey itemKey)) return 0;
+        ItemStack toExtract = itemKey.toStack();
+        byte[] serialized = serializeItemStackToBytes(toExtract);
+        if (serialized.length == 0) return 0;
+        long current = EnderDBManager.getItemCount(scopePrefix, frequency, serialized);
+        long toExtractCount = Math.min(current, amount);
+        long extracted = toExtractCount;
+        if (toExtractCount > 0 && mode == Actionable.MODULATE) {
+            long persistedDelta = EnderDBManager.saveItem(
+                    scopePrefix, frequency, serialized, -toExtractCount);
+            extracted = persistedDelta < 0 ? -persistedDelta : 0;
+            if (extracted <= 0) return 0;
+            stack.setPopTime(5);
+            pingDriveForUpdate(source);
+        }
+        log("Extract called: freq=%d scopePrefix=%s request=%d stored=%d toExtract=%d mode=%s", frequency, scopePrefix, amount, current, toExtractCount, mode);
+        return extracted;
+    }
+
+    private boolean passesFilter(AEKey key) {
+        ConfigInventory configInv = CellConfig.create(Set.of(AEKeyType.items()), stack);
+        for (int i = 0; i < configInv.size(); i++) {
+            AEKey slotKey = configInv.getKey(i);
+            if (slotKey == null) continue;
+            if (slotKey.equals(key)) return true;
+        }
+        return configInv.keySet().isEmpty();
+    }
+
+    @Override
+    public void persist() {}
+
+    @Override
+    public Component getDescription() {
+        return Component.literal("EnderDisk @ Freq " + frequency);
+    }
+
+    public void getAvailableStacks(KeyCounter out) {
+        if (disabled || !EnderDBManager.isReady()) return;
+        List<AEKeyCacheEntry> entries = EnderDBManager.queryItemsByFrequency(scopePrefix, frequency);
+        for (AEKeyCacheEntry entry : entries) {
+            out.add(entry.aeKey(), entry.count());
+        }
+    }
+
+    @Override
+    public boolean isPreferredStorageFor(AEKey what, IActionSource source) {
+        if (disabled || !EnderDBManager.isReady()) return false;
+        if (!(what instanceof AEItemKey itemKey)) return false;
+        byte[] serialized = serializeItemStackToBytes(itemKey.toStack());
+        if (serialized.length == 0) return false;
+        long storedCount = EnderDBManager.getItemCount(scopePrefix, frequency, serialized);
+        return storedCount > 0;
+    }
+
+    public static byte[] serializeItemStackToBytes(ItemStack stack) {
+        try {
+            var provider = ServerLifecycleHooks.getCurrentServer().registryAccess();
+            CompoundTag tag = StackCodecHelper.encodeItemStack(provider, stack);
+            ByteArrayOutputStream baos = new ByteArrayOutputStream(512);
+            try (DataOutputStream dos = new DataOutputStream(baos)) {
+                NbtIo.write(tag, dos);
+            }
+            return baos.toByteArray();
+        } catch (Exception e) { return new byte[0]; }
+    }
+
+    public static ItemStack deserializeItemStackFromBytes(byte[] data) {
+        try {
+            ByteArrayInputStream bais = new ByteArrayInputStream(data);
+            DataInputStream dis = new DataInputStream(bais);
+            CompoundTag tag = NbtIo.read(dis);
+            dis.close();
+            var provider = ServerLifecycleHooks.getCurrentServer().registryAccess();
+            return StackCodecHelper.decodeItemStack(provider, tag);
+        } catch (Exception e) { return ItemStack.EMPTY; }
+    }
+
+    public ItemStack getContainerItem() {
+        return this.stack;
+    }
+
+    private static void pingDriveForUpdate(IActionSource source) {
+        var server = ServerLifecycleHooks.getCurrentServer();
+        if (server == null) return;
+        server.execute(() -> source.machine().ifPresent(host -> {
+            var node = host.getActionableNode();
+            if (node == null) return;
+            IGrid grid = node.getGrid();
+            if (grid == null) return;
+            for (DriveBlockEntity drive : grid.getMachines(DriveBlockEntity.class)) {
+                for (int i = 0; i < drive.getCellCount(); i++) {
+                    ItemStack stackInSlot = drive.getInternalInventory().getStackInSlot(i);
+                    if (!stackInSlot.isEmpty() && stackInSlot.getItem() instanceof EnderDiskItem) {
+                        ((DriveBlockEntityAccessor) drive).enderdrives$triggerVisualUpdate();
+                        ((DriveBlockEntityAccessor) drive).enderdrives$recalculateIdlePower();
+                        break;
+                    }
+                }
+            }
+        }));
+    }
+
+    private static void log(String format, Object... args) {
+        if (DEBUG_LOG) LOGGER.info("[EnderDiskInventory] " + format + "%n", args);
+    }
+
+    private static class Handler implements ICellHandler {
+        @Override public boolean isCell(ItemStack is) { return is != null && is.getItem() instanceof EnderDiskItem; }
+        @Override public @Nullable StorageCell getCellInventory(ItemStack is, @Nullable ISaveProvider host) {
+            return isCell(is) ? new EnderDiskInventory(is, host) : null;
+        }
+    }
+}

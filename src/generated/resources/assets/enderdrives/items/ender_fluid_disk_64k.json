@@ -1,0 +1,33 @@
+{
+  "model": {
+    "type": "minecraft:range_dispatch",
+    "entries": [
+      {
+        "model": {
+          "type": "minecraft:model",
+          "model": "enderdrives:item/ender_fluid_disk_64k_blue"
+        },
+        "threshold": 1.0
+      },
+      {
+        "model": {
+          "type": "minecraft:model",
+          "model": "enderdrives:item/ender_fluid_disk_64k_yellow"
+        },
+        "threshold": 2.0
+      },
+      {
+        "model": {
+          "type": "minecraft:model",
+          "model": "enderdrives:item/ender_fluid_disk_64k_red"
+        },
+        "threshold": 3.0
+      }
+    ],
+    "fallback": {
+      "type": "minecraft:model",
+      "model": "enderdrives:item/ender_fluid_disk_64k_green"
+    },
+    "property": "enderdrives:status"
+  }
+}
