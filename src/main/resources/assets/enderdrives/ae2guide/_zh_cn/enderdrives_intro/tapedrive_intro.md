@@ -58,7 +58,7 @@ item_ids:
 
 ## IO端口传输
 
-磁带盘会对涉及它自身，以及它使用任意IO端口的传输进行自动限流。这是为避免一次传输大量NBT过多的物品导致的游戏卡死。
+通过IO端口对磁带盘输入输出时，磁带盘会自动进行限流。这是为避免一次传输大量NBT过多的物品而导致游戏卡死。
 
 ---
 
@@ -75,7 +75,7 @@ item_ids:
 | <ItemImage id="minecraft:diamond_chestplate" /> | 带有魔咒的**钻石胸甲** |
 | <ItemImage id="minecraft:enchanted_book" />     | 带有魔咒的**附魔书**   |
 | <ItemImage id="minecraft:splash_potion" />      | 具有效果的**药水**     |
-| <ItemImage id="minecraft:netherite_pickaxe" />  | 消耗过耐久度的**工具** |
+| <ItemImage id="minecraft:netherite_pickaxe" />  | 具有耐久度的**工具**   |
 
 ---
 

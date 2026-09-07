@@ -120,7 +120,7 @@
   "screen.enderdrives.tooltip.plus_1": "+1",
   "screen.enderdrives.tooltip.plus_16": "+16",
   "screen.enderdrives.tooltip.plus_256": "+256",
-  "tooltip.enderdrives.disabled": "§c此物品已在服务端禁用",
+  "tooltip.enderdrives.disabled": "§c此物品已在服务端禁用。",
   "tooltip.enderdrives.enderdisk.disabled": "§c此末影磁盘已在服务端禁用。",
   "tooltip.enderdrives.fluid_types": "%s§7 / §9%s§7 流体类型",
   "tooltip.enderdrives.fluidenderdisk.disabled": "§c此末影流体磁盘已在服务端禁用。",
