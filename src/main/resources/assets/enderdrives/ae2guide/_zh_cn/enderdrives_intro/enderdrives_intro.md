@@ -12,6 +12,12 @@ item_ids:
   - enderdrives:ender_disk_64k
   - enderdrives:ender_disk_256k
   - enderdrives:ender_disk_creative
+  - enderdrives:ender_fluid_disk_1k
+  - enderdrives:ender_fluid_disk_4k
+  - enderdrives:ender_fluid_disk_16k
+  - enderdrives:ender_fluid_disk_64k
+  - enderdrives:ender_fluid_disk_256k
+  - enderdrives:ender_fluid_disk_creative
 ---
 
 # 末影驱动器
@@ -107,6 +113,7 @@ item_ids:
     <ItemLink id="enderdrives:ender_fluid_disk_256k" />
   </Column>
 </Row>
+
 
 ---
 
